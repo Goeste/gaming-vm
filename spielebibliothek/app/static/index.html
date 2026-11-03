@@ -40,7 +40,7 @@
   .notice { margin: 12px 0 0; padding: 9px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--warn); }
   .notice.bad { border-left-color: var(--bad); }
   .notice.ok { border-left-color: var(--ok); }
-  main .wrap { padding-top: 6px; }
+  main .wrap { padding-top: 12px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
   /* Listenansicht */
   .grid.list { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
@@ -83,7 +83,11 @@
     .stat b { font-size: 15px; }
     .actions { width: 100%; } .actions button { flex: 1; }
   }
-  .vmbox { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin: 6px 0 14px; }
+  .vmbox { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; margin: 12px 0 0; }
+  .vmbox .vmrow { padding: 4px 0; }
+  main .filters { margin: 4px 0 12px; }
+  /* niedrige Bildschirme: Kopf nicht festhalten, sonst bleibt fuer die Liste kaum Platz */
+  @media (max-height: 820px) { header { position: static; } }
   .vmhead { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
   .vmhead .actions { margin-left: auto; }
   .vmrow { display: grid; grid-template-columns: minmax(120px, 1.4fr) 90px minmax(110px, 1fr) auto; gap: 8px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line); }
@@ -109,7 +113,22 @@
       </div>
     </div>
     <div class="stats" id="stats"></div>
+    <section class="vmbox">
+      <div class="vmhead">
+        <b>VMs</b> <span class="sub" id="vmsub">lade ...</span>
+        <div class="actions">
+          <button id="btnHostUpd" title="Neueste Host-Skripte von GitHub holen und auf dem Proxmox-Host installieren (gaming-update)">Host-Skripte aktualisieren</button>
+          <button id="btnSync" title="Aktuellen Stand der Master-Platte an alle ausgeschalteten Kinder-VMs verteilen (ohne Master-Start)">Nur verteilen</button>
+          <button id="btnAllOff" class="danger" title="Alle Kinder-VMs sauber herunterfahren">Alle Kinder-VMs herunterfahren</button>
+        </div>
+      </div>
+      <div id="vms"></div>
+    </section>
     <div id="notices"></div>
+  </div>
+</header>
+<main>
+  <div class="wrap">
     <div class="filters">
       <input type="search" id="q" placeholder="Spiel suchen ...">
       <div class="seg" id="seg">
@@ -124,21 +143,6 @@
         <button data-v="tiles">Kacheln</button>
       </div>
     </div>
-  </div>
-</header>
-<main>
-  <div class="wrap">
-    <section class="vmbox">
-      <div class="vmhead">
-        <b>VMs</b> <span class="sub" id="vmsub">lade ...</span>
-        <div class="actions">
-          <button id="btnHostUpd" title="Neueste Host-Skripte von GitHub holen und auf dem Proxmox-Host installieren (gaming-update)">Host-Skripte aktualisieren</button>
-          <button id="btnSync" title="Aktuellen Stand der Master-Platte an alle ausgeschalteten Kinder-VMs verteilen (ohne Master-Start)">Nur verteilen</button>
-          <button id="btnAllOff" class="danger" title="Alle Kinder-VMs sauber herunterfahren">Alle Kinder-VMs herunterfahren</button>
-        </div>
-      </div>
-      <div id="vms"></div>
-    </section>
     <div class="grid" id="grid"></div>
     <div class="empty" id="empty" hidden>Keine Spiele gefunden.</div>
   </div>

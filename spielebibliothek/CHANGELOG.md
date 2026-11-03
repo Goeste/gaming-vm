@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.3.1
+- Neue Aufteilung: **VMs** oben im festen Kopfbereich, darunter die **Meldungen**.
+- **Suche und Filter** stehen jetzt direkt über der Spieleliste.
+- Auf niedrigen Bildschirmen scrollt der Kopf mit, damit genug Platz für die Liste bleibt.
+
 ## 1.3.0
 - **Listenansicht** für die Spiele, jetzt Standard. Umschalten zwischen *Liste* und *Kacheln* neben dem Konten-Filter; die Wahl wird im Browser gemerkt.
 - Liste zeigt Bild, Name, Konten, Status, Größe auf dem Master und Spielzeit.
