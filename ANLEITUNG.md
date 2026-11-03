@@ -807,6 +807,14 @@ C:\Scripts\gaming-update.ps1                                                    
 - Aktualisiert nur Skripte, die in der VM schon in `C:\Scripts` liegen (im Master zusätzlich `library-queue.ps1`).
 - Einrichtungsskripte (`setup-*.ps1`, `init-z.ps1`) werden **nicht** ausgeführt, die Moonlight-Kopplung bleibt.
 - Das ganze Paket liegt danach in `C:\GamingVM`, z. B. für eine neue Einrichtung.
+- **Automatisch beim Start:** Der Befehl richtet die Aufgabe **„Gaming Update“** ein. Sie holt eine Minute nach jedem
+  Start der VM still als Systemkonto die neueste Version. Ohne Internet oder bei einem Fehler bleibt die bisherige
+  Version. Log: `C:\ProgramData\GamingVM\update.log`.
+  Abschalten: `C:\Scripts\gaming-update.ps1 -AutoOff`, wieder an: `C:\Scripts\gaming-update.ps1 -AutoOn`.
+- `C:\Scripts` und `C:\GamingVM` sind danach nur für Administratoren beschreibbar. Die Skripte dort laufen als
+  Systemkonto; dürften die Kinder sie ändern, könnten sie sich damit Administratorrechte verschaffen.
+- **Hinweis:** Die Automatik führt Code aus diesem GitHub-Repository mit vollen Rechten aus. Das GitHub-Konto deshalb
+  mit Zwei-Faktor-Anmeldung schützen.
 
 **Home Assistant:** Ist das Repository als App-Quelle eingetragen (13.3), zeigt Home Assistant neue Versionen der
 Spielebibliothek als Update an. Wer die App vorher von Hand nach `local_apps` kopiert hat: die lokale App deinstallieren

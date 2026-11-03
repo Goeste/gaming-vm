@@ -21,6 +21,8 @@ irm https://raw.githubusercontent.com/Goeste/gaming-vm/main/update.ps1 | iex
 C:\Scripts\gaming-update.ps1
 ```
 Aktualisiert nur die Skripte, die in der VM schon in `C:\Scripts` liegen. Einrichtungen werden nicht erneut ausgeführt.
+Danach holt die Aufgabe „Gaming Update“ bei jedem Start der VM automatisch die neueste Version
+(abschalten: `C:\Scripts\gaming-update.ps1 -AutoOff`).
 
 **Home Assistant** (App „Spielebibliothek“): Einstellungen → Apps → App-Store → ⋮ → Repositories →
 `https://github.com/Goeste/gaming-vm` hinzufügen. Updates erscheinen dann automatisch.
