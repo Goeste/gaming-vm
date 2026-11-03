@@ -46,7 +46,25 @@ function Say([string]$m, [string]$color = 'Gray') {
 # Systemkonto - duerften die Kinder sie aendern, koennten sie damit Administratorrechte bekommen.
 function Lock-Folder([string]$dir) {
     if (-not (Test-Path $dir)) { return }
-    & icacls.exe $dir /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' /T /C /Q 2>&1 | Out-Null
+    # Rechte nur am Ordner selbst setzen (vererbbar) ...
+    & icacls.exe $dir /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' /C /Q 2>&1 | Out-Null
+    # ... und alles darin auf "nur geerbte Rechte" zuruecksetzen
+    if (Get-ChildItem -LiteralPath $dir -Force -ErrorAction SilentlyContinue | Select-Object -First 1) {
+        & icacls.exe "$dir\*" /reset /T /C /Q 2>&1 | Out-Null
+    }
+}
+
+# Alten Paketordner wegraeumen - auch wenn eine fruehere Version ihm kaputte Rechte gesetzt hat
+function Remove-OldPackage([string]$dir) {
+    if (-not (Test-Path $dir)) { return }
+    $old = "$dir.alt-" + (Get-Date -Format 'yyyyMMddHHmmss')
+    Rename-Item -LiteralPath $dir -NewName (Split-Path $old -Leaf)
+    & icacls.exe $old /reset /T /C /Q 2>&1 | Out-Null
+    & icacls.exe $old /grant '*S-1-5-32-544:(OI)(CI)F' /T /C /Q 2>&1 | Out-Null
+    Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue
+    foreach ($leftover in Get-ChildItem -Path (Split-Path $dir -Parent) -Directory -Filter ((Split-Path $dir -Leaf) + '.alt-*') -ErrorAction SilentlyContinue) {
+        Remove-Item -LiteralPath $leftover.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Register-AutoUpdate {
@@ -98,17 +116,12 @@ try {
     if (-not $src -or -not (Test-Path (Join-Path $src.FullName 'master\master-update.ps1'))) { throw 'Download unvollstaendig' }
     Get-ChildItem -Path $src.FullName -Recurse -File | Unblock-File
 
-    # Ganzes Paket nach C:\GamingVM
-    if (Test-Path $PkgDir) { Remove-Item -Path $PkgDir -Recurse -Force }
-    Move-Item -Path $src.FullName -Destination $PkgDir
-    Lock-Folder $PkgDir
-
-    # Installierte Skripte aktualisieren
+    # Installierte Skripte aktualisieren (direkt aus dem Download)
     New-Item -ItemType Directory -Force -Path $ScriptDir | Out-Null
     $isMaster = Test-Path (Join-Path $ScriptDir 'master-update.ps1')
     $skip = @('setup-master.ps1', 'setup-kid-vm.ps1', 'setup-scan-task.ps1', 'init-z.ps1')
     $updated = New-Object System.Collections.Generic.List[string]
-    foreach ($f in Get-ChildItem -Path (Join-Path $PkgDir 'master'), (Join-Path $PkgDir 'persist') -Filter '*.ps1') {
+    foreach ($f in Get-ChildItem -Path (Join-Path $src.FullName 'master'), (Join-Path $src.FullName 'persist') -Filter '*.ps1') {
         if ($skip -contains $f.Name) { continue }
         $target = Join-Path $ScriptDir $f.Name
         $wanted = (Test-Path $target) -or ($isMaster -and $f.Name -eq 'library-queue.ps1')
@@ -116,8 +129,13 @@ try {
         $same = (Test-Path $target) -and ((Get-FileHash $target).Hash -eq (Get-FileHash $f.FullName).Hash)
         if (-not $same) { Copy-Item -Path $f.FullName -Destination $target -Force; $updated.Add($f.Name) }
     }
-    Copy-Item -Path (Join-Path $PkgDir 'update.ps1') -Destination (Join-Path $ScriptDir 'gaming-update.ps1') -Force
+    Copy-Item -Path (Join-Path $src.FullName 'update.ps1') -Destination (Join-Path $ScriptDir 'gaming-update.ps1') -Force
     Lock-Folder $ScriptDir
+
+    # Ganzes Paket nach C:\GamingVM
+    Remove-OldPackage $PkgDir
+    Move-Item -Path $src.FullName -Destination $PkgDir
+    Lock-Folder $PkgDir
 
     # Automatik einrichten (ausser sie wurde abgeschaltet)
     $autoState = 'aus (einschalten: -AutoOn)'
