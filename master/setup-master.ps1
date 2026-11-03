@@ -28,10 +28,23 @@ Set-ItemProperty -Path $desk -Name AutoEndTasks         -Value '1'    -Type Stri
 Set-ItemProperty -Path $desk -Name WaitToKillAppTimeout -Value '5000' -Type String
 Set-ItemProperty -Path $desk -Name HungAppTimeout       -Value '5000' -Type String
 
-Write-Host '2/4 Schreibrechte fuer "Benutzer" auf der Steam-Bibliothek (kann dauern)...' -ForegroundColor Cyan
+Write-Host '2/4 Schreibrechte fuer "Benutzer" auf der Steam-Bibliothek...' -ForegroundColor Cyan
 if (Test-Path $Library) {
-    icacls $Library /grant '*S-1-5-32-545:(OI)(CI)M' /T /C /Q | Out-Null
-    Write-Host "    OK: $Library"
+    # Nur am obersten Ordner setzen - Windows vererbt das Recht an alle Unterordner und Dateien.
+    # (Frueher mit /T: ging jede Datei einzeln durch und dauerte bei grossen Bibliotheken sehr lange.)
+    $has = $false
+    foreach ($r in (Get-Acl -Path $Library).Access) {
+        try { $sid = $r.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch { continue }
+        if ($sid -eq 'S-1-5-32-545' -and $r.AccessControlType -eq 'Allow' -and
+            ($r.FileSystemRights -band [Security.AccessControl.FileSystemRights]::Modify) -eq [Security.AccessControl.FileSystemRights]::Modify -and
+            ($r.InheritanceFlags -band [Security.AccessControl.InheritanceFlags]::ContainerInherit)) { $has = $true }
+    }
+    if ($has) {
+        Write-Host "    OK: Recht ist schon gesetzt ($Library)"
+    } else {
+        icacls $Library /grant '*S-1-5-32-545:(OI)(CI)M' /C /Q | Out-Null
+        Write-Host "    OK: $Library (wird an alle Unterordner vererbt)"
+    }
 } else {
     Write-Warning "$Library nicht gefunden - Schritt uebersprungen."
 }
