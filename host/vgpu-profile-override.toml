@@ -1,0 +1,17 @@
+# Beispiel für /etc/vgpu_unlock/profile_override.toml (vgpu_unlock-rs)
+# Profil nvidia-57 = GRID P40-4A, aufgebohrt auf 6 GB und 4K, ohne 60-FPS-Bremse.
+# Nach einer Änderung die VMs komplett ausschalten und neu starten
+# (ein Neustart aus Windows heraus reicht nicht).
+
+[profile.nvidia-57]
+num_displays = 1                        # ein virtueller Bildschirm reicht für Sunshine
+display_width = 3840                    # max. Auflösung im Gast
+display_height = 2160
+max_pixels = 8294400                    # = display_width * display_height
+frl_enabled = 0                         # 0 = keine 60-FPS-Bremse (wichtig!)
+cuda_enabled = 1
+framebuffer = 0x164000000               # 5,5625 GiB nutzbarer VRAM
+framebuffer_reservation = 0x1C000000    # 448 MiB Reserve -> zusammen genau 6 GiB
+
+# ACHTUNG: 24 GB / 6 GB = höchstens 4 dieser vGPU-VMs gleichzeitig
+# (Master + 3 Kinder). Proxmox würde mehr zulassen, weil das Originalprofil 4 GB hat.

@@ -1,0 +1,4 @@
+# Windows-Skripte unverändert lassen (UTF-8 mit BOM, CRLF)
+*.ps1 -text
+# Linux-Skripte immer mit LF
+*.sh  text eol=lf

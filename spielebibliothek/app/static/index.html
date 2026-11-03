@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spielebibliothek</title>
+<style>
+  :root {
+    --bg: #0f1216; --panel: #171b21; --panel2: #1e232b; --line: #2a313b;
+    --text: #e7eaee; --muted: #8b95a3; --accent: #4fa3ff; --ok: #3ccf8e; --warn: #f2b84b; --bad: #ff6b6b;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f3f5f8; --panel: #ffffff; --panel2: #eef1f5; --line: #d9dee5; --text: #161a1f; --muted: #5d6673; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 14px 16px; }
+  .top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+  .sub { color: var(--muted); font-size: 12.5px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel2); color: var(--text); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 12px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+  .stat b { display: block; font-size: 17px; }
+  .bar { height: 6px; background: var(--panel2); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+  input[type=search], select { font: inherit; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  input[type=search] { flex: 1 1 220px; min-width: 0; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: var(--panel); }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .notice { margin: 12px 0 0; padding: 9px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--warn); }
+  .notice.bad { border-left-color: var(--bad); }
+  .notice.ok { border-left-color: var(--ok); }
+  main .wrap { padding-top: 6px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
+  .cap { aspect-ratio: 460 / 215; background: var(--panel2) center/cover no-repeat; position: relative; }
+  .cap span[hidden] { display: none; }
+  .cap span { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; padding: 8px; text-align: center; }
+  .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .name { font-weight: 600; line-height: 1.3; }
+  .owners { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { font-size: 11.5px; padding: 1px 7px; border-radius: 99px; background: var(--panel2); color: var(--muted); border: 1px solid var(--line); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
+  .badge { font-size: 12px; font-weight: 600; }
+  .b-ok { color: var(--ok); } .b-warn { color: var(--warn); } .b-bad { color: var(--bad); } .b-muted { color: var(--muted); }
+  .err { font-size: 12px; color: var(--bad); }
+  details { margin-top: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; }
+  summary { cursor: pointer; color: var(--muted); }
+  code.key { display: block; white-space: pre-wrap; word-break: break-all; background: var(--panel2); padding: 8px; border-radius: 6px; font-size: 12px; margin: 8px 0; }
+  table.vms { border-collapse: collapse; width: 100%; margin-top: 6px; font-size: 13px; }
+  table.vms td, table.vms th { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+  .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+  @media (max-width: 640px) {
+    header { position: static; }
+    .stats { grid-template-columns: 1fr 1fr; }
+    .stat b { font-size: 15px; }
+    .actions { width: 100%; } .actions button { flex: 1; }
+  }
+  #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line); padding: 9px 14px; border-radius: 8px; display: none; max-width: calc(100% - 32px); z-index: 9; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <h1>Spielebibliothek</h1>
+        <div class="sub" id="sub">lade ...</div>
+      </div>
+      <div class="actions">
+        <button id="btnRefresh" title="Spielelisten neu von Steam holen">Konten aktualisieren</button>
+        <button id="btnNow" class="primary" title="Master jetzt starten, Aufträge ausführen, Spiele laden und danach D: verteilen">Jetzt installieren und verteilen</button>
+      </div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div id="notices"></div>
+    <div class="filters">
+      <input type="search" id="q" placeholder="Spiel suchen ...">
+      <div class="seg" id="seg">
+        <button data-f="all" class="on">Alle</button>
+        <button data-f="inst">Installiert</button>
+        <button data-f="not">Nicht installiert</button>
+        <button data-f="queue">Vorgemerkt</button>
+      </div>
+      <select id="owner"><option value="">Alle Konten</option></select>
+    </div>
+  </div>
+</header>
+<main>
+  <div class="wrap">
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="empty" hidden>Keine Spiele gefunden.</div>
+    <details id="hostBox">
+      <summary>Proxmox-Host und Kinder-VMs</summary>
+      <div id="host" class="sub">-</div>
+    </details>
+    <details>
+      <summary>Einrichtung: SSH-Schlüssel für den Proxmox-Host</summary>
+      <p class="sub">Diese Zeile auf dem Proxmox-Host in <code>/root/.ssh/authorized_keys</code> eintragen. Der Schlüssel darf dann nur <code>game-disk-sync.sh</code> aufrufen (Status abfragen, Master starten, verteilen) - sonst nichts.</p>
+      <code class="key" id="key"></code>
+      <button id="btnCopy">Kopieren</button>
+    </details>
+  </div>
+</main>
+<div id="toast"></div>
+<script>
+const $ = s => document.querySelector(s);
+let S = null, filter = 'all';
+
+function gb(b) { return b == null ? '-' : (b / 1024 ** 3).toFixed(b > 100 * 1024 ** 3 ? 0 : 1) + ' GB'; }
+function ago(iso) {
+  if (!iso) return 'nie';
+  const m = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (m < 1) return 'gerade eben'; if (m < 60) return `vor ${m} min`;
+  const h = Math.round(m / 60); if (h < 48) return `vor ${h} h`;
+  return `vor ${Math.round(h / 24)} Tagen`;
+}
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(msg, ms = 4000) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', ms); }
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  let j = {}; try { j = await r.json(); } catch (e) {}
+  if (!r.ok && !j.error) j.error = `HTTP ${r.status}`;
+  return j;
+}
+
+function statusOf(g) {
+  if (g.queued === 'install' && g.installed) return ['Wird geladen', 'b-warn'];
+  if (g.queued === 'install') return ['Vorgemerkt: installieren', 'b-warn'];
+  if (g.queued === 'remove') return ['Vorgemerkt: entfernen', 'b-warn'];
+  if (g.installed && g.state === 4) return ['Installiert' + (g.size ? ' - ' + gb(g.size) : ''), 'b-ok'];
+  if (g.installed) return ['Wird geladen', 'b-warn'];
+  return ['Nicht installiert', 'b-muted'];
+}
+
+function card(g) {
+  const [label, cls] = statusOf(g);
+  let btn;
+  if (g.queued) btn = `<button data-a="cancel" data-id="${g.appid}">Abbrechen</button>`;
+  else if (g.installed) btn = `<button class="danger" data-a="remove" data-id="${g.appid}">Entfernen</button>`;
+  else btn = `<button data-a="install" data-id="${g.appid}">Installieren</button>`;
+  const r = g.result;
+  const err = r && ['abgelehnt', 'fehler', 'aufgeschoben'].includes(r.result) ? `<div class="err">${esc(r.result)}: ${esc(r.message)}</div>` : '';
+  const owners = g.owners.length ? g.owners.map(o => `<span class="chip">${esc(o)}</span>`).join('') : '<span class="chip">kein Konto</span>';
+  const img = `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.appid}/header.jpg`;
+  return `<div class="card">
+    <div class="cap" style="background-image:url('${img}')"><span hidden>${esc(g.name)}</span></div>
+    <div class="body">
+      <div class="name">${esc(g.name)}</div>
+      <div class="owners">${owners}</div>
+      ${err}
+      <div class="row"><span class="badge ${cls}">${label}</span>${btn}</div>
+    </div></div>`;
+}
+
+function render() {
+  if (!S) return;
+  const q = $('#q').value.trim().toLowerCase();
+  const owner = $('#owner').value;
+  const list = S.games.filter(g =>
+    (!q || g.name.toLowerCase().includes(q) || String(g.appid) === q) &&
+    (!owner || g.owners.includes(owner)) &&
+    (filter === 'all' || (filter === 'inst' && g.installed) || (filter === 'not' && !g.installed) || (filter === 'queue' && g.queued)));
+  $('#grid').innerHTML = list.map(card).join('');
+  $('#empty').hidden = list.length > 0;
+}
+
+function renderHead() {
+  const st = S.status;
+  const inst = S.games.filter(g => g.installed).length;
+  const used = st && st.total_bytes ? 1 - st.free_bytes / st.total_bytes : 0;
+  $('#sub').textContent = `${S.games.length} Spiele in ${S.accounts.length} Konten - Listen ${ago(S.cache_time)} geholt`;
+  $('#stats').innerHTML = `
+    <div class="stat"><span class="sub">Auf dem Master installiert</span><b>${inst}</b></div>
+    <div class="stat"><span class="sub">Vorgemerkt</span><b>${S.queue_count}</b></div>
+    <div class="stat"><span class="sub">D: frei</span><b>${st ? gb(st.free_bytes) + ' von ' + gb(st.total_bytes) : '-'}</b>
+      <div class="bar"><i style="width:${(used * 100).toFixed(1)}%"></i></div></div>
+    <div class="stat"><span class="sub">Letzte Meldung vom Master</span><b>${st ? ago(st.time) : 'noch keine'}</b></div>`;
+  const n = [];
+  if (!S.folder_ok) n.push(['bad', `Ordner <b>${esc(S.folder)}</b> nicht erreichbar - Netzwerkspeicher in Home Assistant einbinden (Anleitung 13).`]);
+  for (const [k, v] of Object.entries(S.errors || {})) n.push(['bad', `${esc(k === '*' ? 'Steam' : k)}: ${esc(v)}`]);
+  if (S.jetzt && (!st || st.jetzt_erledigt !== S.jetzt)) n.push(['', `Sofort-Lauf angefordert ${ago(S.jetzt)} - der Master arbeitet die Aufträge ab und verteilt danach D:.`]);
+  if (!S.host_configured) n.push(['', 'Kein Proxmox-Host eingetragen: "Jetzt installieren" merkt nur vor, erledigt wird es im Nachtlauf.']);
+  $('#notices').innerHTML = n.map(([c, t]) => `<div class="notice ${c}">${t}</div>`).join('');
+  const sel = $('#owner'), cur = sel.value;
+  sel.innerHTML = '<option value="">Alle Konten</option>' + S.accounts.map(a => `<option ${a === cur ? 'selected' : ''}>${esc(a)}</option>`).join('');
+  $('#key').textContent = S.authorized_key;
+}
+
+async function load() {
+  const j = await api('api/state');
+  if (j.error) { $('#sub').textContent = 'Fehler: ' + j.error; return; }
+  S = j; renderHead(); render();
+}
+
+async function loadHost() {
+  const j = await api('api/host');
+  if (!j.ok) { $('#host').textContent = 'Nicht verfügbar: ' + (j.error || '?'); return; }
+  const s = j.status;
+  const rows = (s.vms || []).map(v => `<tr><td>${v.vmid}</td><td>${esc(v.name)}</td><td>${esc(v.status)}</td><td>${esc(v.snapshot)}</td><td>${v.current ? 'aktuell' : '<span class="b-warn">veraltet</span>'}</td></tr>`).join('');
+  $('#host').innerHTML = `Master: <b>${esc(s.master)}</b>${s.busy ? ' - <span class="b-warn">Lauf aktiv</span>' : ''} - neuester Stand: ${esc(s.latest_snapshot || '-')}
+    <table class="vms"><tr><th>VM</th><th>Name</th><th>Status</th><th>D:-Stand</th><th></th></tr>${rows}</table>`;
+}
+
+$('#grid').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-a]'); if (!b) return;
+  const id = +b.dataset.id, g = S.games.find(x => x.appid === id), a = b.dataset.a;
+  if (a === 'remove' && !confirm(`"${g.name}" beim nächsten Lauf vom Master entfernen?\nSpielstände auf Z: bleiben erhalten.`)) return;
+  b.disabled = true;
+  const j = await api('api/queue', { appid: id, name: g.name, action: a });
+  if (j.error) toast('Fehler: ' + j.error); else await load();
+});
+$('#seg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  filter = b.dataset.f; document.querySelectorAll('#seg button').forEach(x => x.classList.toggle('on', x === b)); render();
+});
+$('#q').addEventListener('input', render);
+$('#owner').addEventListener('change', render);
+$('#btnRefresh').addEventListener('click', async e => {
+  e.target.disabled = true; toast('Hole Spielelisten von Steam ...');
+  const j = await api('api/refresh', {}); e.target.disabled = false;
+  const errs = Object.values(j.errors || {}); toast(errs.length ? 'Teilweise fehlgeschlagen - siehe Hinweise' : 'Spielelisten aktualisiert');
+  load();
+});
+$('#btnNow').addEventListener('click', async e => {
+  if (!confirm('Master jetzt starten, vorgemerkte Spiele installieren/entfernen, alles aktualisieren und danach D: verteilen?\n\nLaufende Kinder-VMs werden nicht unterbrochen - sie bekommen den neuen Stand in der nächsten Nacht.')) return;
+  e.target.disabled = true;
+  const j = await api('api/now', {}); e.target.disabled = false;
+  toast(j.ok ? (j.message || 'Gestartet') : 'Fehler: ' + j.error, 7000);
+  load(); loadHost();
+});
+$('#btnCopy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(S.authorized_key); toast('Kopiert'); } catch (e) { toast('Bitte von Hand markieren und kopieren'); }
+});
+$('#hostBox').addEventListener('toggle', e => { if (e.target.open) loadHost(); });
+
+// Fallback, wenn das Spielbild fehlt
+new MutationObserver(() => document.querySelectorAll('.cap:not([data-c])').forEach(c => {
+  c.dataset.c = 1; const url = c.style.backgroundImage.slice(5, -2); const im = new Image();
+  im.onerror = () => { c.style.backgroundImage = 'none'; c.querySelector('span').hidden = false; }; im.src = url;
+})).observe($('#grid'), { childList: true });
+
+load();
+setInterval(load, 60000);
+</script>
+</body>
+</html>
