@@ -111,6 +111,7 @@
       <div class="vmhead">
         <b>VMs</b> <span class="sub" id="vmsub">lade ...</span>
         <div class="actions">
+          <button id="btnHostUpd" title="Neueste Host-Skripte von GitHub holen und auf dem Proxmox-Host installieren (gaming-update)">Host-Skripte aktualisieren</button>
           <button id="btnSync" title="Aktuellen Stand der Master-Platte an alle ausgeschalteten Kinder-VMs verteilen (ohne Master-Start)">Nur verteilen</button>
           <button id="btnAllOff" class="danger" title="Alle Kinder-VMs sauber herunterfahren">Alle Kinder-VMs herunterfahren</button>
         </div>
@@ -222,6 +223,7 @@ async function loadHost() {
     return;
   }
   $('#vmsub').innerHTML = `neuester D:-Stand: ${esc(j.latest_snapshot || '-')}` + (j.busy ? ' - <span class="b-warn">Nachtlauf/Verteilen läuft</span>' : '')
+    + (j.host_update ? ` - Host-Skripte ${j.host_update.result === 'ok' ? 'aktualisiert' : '<span class="b-bad">Update fehlgeschlagen</span>'} ${ago(j.host_update.time)}` : '')
     + (j.stale ? ` - <span class="b-warn" title="${esc(j.error)}">Host antwortet gerade nicht, Stand von vor ${j.age < 120 ? j.age + ' s' : Math.round(j.age / 60) + ' min'}</span>` : '');
   $('#vms').innerHTML = j.rows.map(v => {
     const on = v.status === 'running', st = !v.known ? ['nicht gefunden', 'b-bad'] : on ? ['läuft', 'b-ok'] : v.status === 'stopped' ? ['aus', 'b-muted'] : [v.status, 'b-warn'];
@@ -251,6 +253,14 @@ $('#btnAllOff').addEventListener('click', () => {
   const ids = (H && H.rows || []).filter(r => r.role === 'kind' && r.status === 'running').map(r => r.vmid);
   if (!ids.length) return toast('Keine Kinder-VM läuft');
   vmAction('shutdown', ids, `Alle laufenden Kinder-VMs (${ids.join(', ')}) herunterfahren?`);
+});
+$('#btnHostUpd').addEventListener('click', async e => {
+  if (!confirm('Neueste Skripte von GitHub auf dem Proxmox-Host installieren?\nEigene Einstellungen in /etc/gaming-vm.conf bleiben erhalten.')) return;
+  e.target.disabled = true;
+  const j = await api('api/host-update', {});
+  e.target.disabled = false;
+  toast(j.ok ? 'Update gestartet - Ergebnis erscheint in etwa einer Minute oben im VM-Bereich' : 'Fehler: ' + j.error, 7000);
+  setTimeout(loadHost, 30000);
 });
 $('#btnSync').addEventListener('click', () => {
   const ids = (H && H.rows || []).filter(r => r.role === 'kind' && r.known).map(r => r.vmid);

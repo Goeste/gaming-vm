@@ -463,9 +463,21 @@ def host():
                      "status": h.get("status") if h else "unbekannt", "snapshot": h.get("snapshot") if h else None,
                      "current": h.get("current") if h else None, "known": bool(h)})
     return jsonify({"ok": True, "stale": stale, "error": c["error"] if stale else None,
-                    "age": int(time.time() - c["ok_time"]), "busy": st.get("busy"), "latest_snapshot": st.get("latest_snapshot"),
+                    "age": int(time.time() - c["ok_time"]), "busy": st.get("busy"),
+                    "host_update": st.get("host_update"), "latest_snapshot": st.get("latest_snapshot"),
                     "master_changed_bytes": st.get("master_changed_bytes"), "last_run": st.get("last_run"),
                     "rows": rows})
+
+
+@app.post("/api/host-update")
+def host_update():
+    out, err = ssh("--self-update", timeout=30)
+    HOST_CACHE["time"] = 0.0
+    if err:
+        if "Unzulässiges Argument" in err:
+            err = "Der Host kennt den Befehl noch nicht - einmal von Hand 'gaming-update' auf dem Host ausführen"
+        return jsonify({"ok": False, "error": err})
+    return jsonify({"ok": True, "message": out})
 
 
 @app.post("/api/vm")

@@ -736,6 +736,7 @@ Ohne `ssh_private_key` erzeugt die App selbst einen Schlüssel; die Zeile für `
 | Jetzt installieren und verteilen | `gaming-nightly.sh --now <VMs aus der Konfiguration>` |
 | Nur verteilen | `game-disk-sync.sh <VMs>` – nur ausgeschaltete VMs, Master muss aus sein |
 | Starten / Herunterfahren | `qm start` bzw. `qm shutdown` – nur Master und Kinder-VMs, nicht während des Nachtlaufs |
+| Host-Skripte aktualisieren | `gaming-update` – neueste Skripte von GitHub, nicht während des Nachtlaufs (Log: `/var/log/gaming-update.log`) |
 
 ### 13.5 Master
 Im Master als Administrator (die Freigabe muss nach 6.9 mit `-Master` eingerichtet sein):

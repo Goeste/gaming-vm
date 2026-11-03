@@ -19,8 +19,16 @@ DEST="/opt/gaming-vm"
 
 [[ $EUID -eq 0 ]] || { echo "Bitte als root ausführen."; exit 1; }
 
+STATE=/var/lib/game-disk-sync/update.json      # Ergebnis für die Spielebibliothek (Home Assistant)
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+finish() {
+  local rc=$?
+  rm -rf "$tmp"
+  mkdir -p "$(dirname "$STATE")"
+  local res=ok; (( rc == 0 )) || res=error
+  echo "{\"time\":\"$(date -Iseconds)\",\"result\":\"$res\",\"exit\":$rc}" > "$STATE"
+}
+trap finish EXIT
 echo "Lade $REPO ($BRANCH) von GitHub ..."
 curl -fsSL "https://codeload.github.com/${REPO}/tar.gz/refs/heads/${BRANCH}" | tar -xz -C "$tmp"
 src=$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -n 1)

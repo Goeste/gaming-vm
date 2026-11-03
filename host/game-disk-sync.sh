@@ -16,6 +16,7 @@
 #     --status             aktuellen Stand als JSON ausgeben (für einen Home-Assistant-Sensor)
 #     --start VMID..       VMs starten (nur Master und Kinder-VMs; im Hintergrund)
 #     --shutdown VMID..    VMs sauber herunterfahren (nur Master und Kinder-VMs; im Hintergrund)
+#     --self-update        neueste Skripte von GitHub holen und installieren (gaming-update, im Hintergrund)
 #     --full-now [VMID..]  Master JETZT starten (Spiele installieren/aktualisieren) und danach
 #                          verteilen: startet "gaming-nightly.sh --now" im Hintergrund
 #                          (Knopf der Spielebibliothek). Laufende Kinder-VMs werden übersprungen.
@@ -54,7 +55,7 @@ log() {
   echo "$line" >> "$LOGFILE" 2>/dev/null || true
 }
 die() { log "FEHLER: $*"; write_result "error" "$*"; exit 1; }
-usage() { sed -n '4,29p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '4,30p' "$0" | sed 's/^# \{0,1\}//'; }
 
 UPDATED=(); SKIPPED=(); CURRENT=(); SNAP=""
 json_list() { local IFS=,; echo "[${*:-}]"; }
@@ -74,7 +75,7 @@ if (( ${#ARGS[@]} == 0 )) && [[ -n "${SSH_ORIGINAL_COMMAND:-}" ]]; then
   for w in "${words[@]}"; do
     case "$w" in
       game-disk-sync|*/game-disk-sync.sh|game-disk-sync.sh) ;;
-      --shutdown-running|--detach|--status|--full-now|--start|--shutdown|[0-9]*) ARGS+=("$w") ;;
+      --shutdown-running|--detach|--status|--full-now|--start|--shutdown|--self-update|[0-9]*) ARGS+=("$w") ;;
       *) echo "Unzulässiges Argument: $w" >&2; exit 1 ;;
     esac
   done
@@ -88,6 +89,7 @@ for a in "${ARGS[@]}"; do
     --status)           MODE=status ;;
     --full-now)         MODE=full ;;
     --start)            MODE=start ;;
+    --self-update)      MODE=selfupdate ;;
     --shutdown)         MODE=shutdown ;;
     -h|--help)          usage; exit 0 ;;
     *[!0-9]*|"")        usage; echo "Unbekanntes Argument: $a" >&2; exit 1 ;;
@@ -96,6 +98,17 @@ for a in "${ARGS[@]}"; do
 done
 
 [[ $EUID -eq 0 ]] || { echo "Bitte als root ausführen." >&2; exit 1; }
+
+# ---------------------------- Host-Skripte aktualisieren --------------------
+if [[ "$MODE" == "selfupdate" ]]; then
+  if ! flock -n "$LOCKFILE" true 2>/dev/null; then
+    echo "Nachtlauf oder Sync läuft gerade – Update später." >&2; exit 2
+  fi
+  [[ -x /usr/local/sbin/gaming-update ]] || { echo "gaming-update ist nicht installiert." >&2; exit 1; }
+  setsid nohup /usr/local/sbin/gaming-update > /var/log/gaming-update.log 2>&1 < /dev/null &
+  echo "Update der Host-Skripte gestartet – Log: /var/log/gaming-update.log"
+  exit 0
+fi
 
 # ---------------------------- Sofort-Lauf (Master + Verteilen) --------------
 if [[ "$MODE" == "full" ]]; then
@@ -204,8 +217,9 @@ if [[ "$MODE" == "status" ]]; then
     vms+=("{\"vmid\":$id,\"name\":\"$name\",\"status\":\"$(vm_status_fast "$id")\",\"snapshot\":\"${origin#*@}\",\"current\":$cur}")
   done
   last="null"; [[ -f "$STATEDIR/last.json" ]] && last=$(tr -d '\n' < "$STATEDIR/last.json")
+  upd="null"; [[ -f "$STATEDIR/update.json" ]] && upd=$(tr -d '\n' < "$STATEDIR/update.json")
   busy=false; flock -n "$LOCKFILE" true 2>/dev/null || busy=true
-  echo "{\"busy\":$busy,\"master_vmid\":$MASTER_VMID,\"master\":\"$(vm_status_fast "$MASTER_VMID")\",\"latest_snapshot\":\"${latest#*@}\",\"master_changed_bytes\":${written:-0},\"vms\":$(json_list "${vms[@]}"),\"last_run\":$last}"
+  echo "{\"busy\":$busy,\"master_vmid\":$MASTER_VMID,\"master\":\"$(vm_status_fast "$MASTER_VMID")\",\"latest_snapshot\":\"${latest#*@}\",\"master_changed_bytes\":${written:-0},\"vms\":$(json_list "${vms[@]}"),\"last_run\":$last,\"host_update\":$upd}"
   exit 0
 fi
 
