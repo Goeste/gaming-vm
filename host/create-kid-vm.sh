@@ -36,6 +36,8 @@ DATA_SLOT="scsi2"                   # dauerhafte Datenplatte Z: (bleibt beim Nac
 DATA_DISK_GB=64
 DATA_OPTS="cache=writeback,discard=on,iothread=1,ssd=1"
 # -----------------------------------------------------------------------------
+# Eigene Einstellungen (bleiben bei gaming-update erhalten) überschreiben die Werte oben
+[[ -f /etc/gaming-vm.conf ]] && source /etc/gaming-vm.conf
 
 log()   { echo "$(date '+%F %T') [create-kid-vm] $*"; }
 die()   { log "FEHLER: $*"; exit 1; }

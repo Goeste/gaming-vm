@@ -1,5 +1,5 @@
 name: Spielebibliothek
-version: "1.0.2"
+version: "1.1.0"
 slug: spielebibliothek
 url: https://github.com/Goeste/gaming-vm
 description: Steam-Spiele aller Konten anzeigen und auf dem Gaming-Master installieren
@@ -23,6 +23,13 @@ options:
   library_folder: /share/gaming/Bibliothek
   proxmox_host: ""
   proxmox_user: root
+  ssh_private_key: ""
+  master_vmid: 2190
+  vms:
+    - vmid: 2193
+    - vmid: 2194
+    - vmid: 2195
+    - vmid: 2196
 schema:
   steam_api_key: password
   accounts:
@@ -31,3 +38,8 @@ schema:
   library_folder: str
   proxmox_host: str?
   proxmox_user: str
+  ssh_private_key: password?
+  master_vmid: int(100,999999999)
+  vms:
+    - vmid: int(100,999999999)
+      name: str?

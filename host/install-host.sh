@@ -15,6 +15,27 @@ install -m 0755 "$DIR/gaming-nightly.sh" /usr/local/sbin/gaming-nightly.sh
 install -m 0755 "$DIR/create-kid-vm.sh"  /usr/local/sbin/create-kid-vm.sh
 install -m 0755 "$DIR/game-disk-sync.sh"  /usr/local/sbin/game-disk-sync.sh
 [[ -f "$DIR/gaming-update.sh" ]] && install -m 0755 "$DIR/gaming-update.sh" /usr/local/sbin/gaming-update
+[[ -f "$DIR/gaming-ha-key.sh" ]] && install -m 0755 "$DIR/gaming-ha-key.sh" /usr/local/sbin/gaming-ha-key
+
+# Eigene Einstellungen: wird nur beim ersten Mal angelegt, danach nie überschrieben
+if [[ ! -f /etc/gaming-vm.conf ]]; then
+  cat > /etc/gaming-vm.conf <<'CONFEOF'
+# Eigene Einstellungen der Gaming-Skripte (gaming-nightly.sh, game-disk-sync.sh, create-kid-vm.sh).
+# Diese Datei überschreibt gaming-update nie. Zeile entkommentieren und Wert ändern.
+#MASTER_VMID=2190
+#MASTER_VOLUME="vm-2190-disk-3"
+#STORAGE="data"
+#TEMPLATE_VMID=2199
+#PLAYERS=()                    # leer = Kinder-VMs automatisch erkennen
+#SHUTDOWN_RUNNING_PLAYERS=1    # Nachtlauf: laufende Kinder-VMs herunterfahren
+#KEEP_SNAPSHOTS=3
+#FORCE_STOP_MASTER=1
+#MASTER_TIMEOUT=$((4 * 3600))
+CONFEOF
+  echo "OK: /etc/gaming-vm.conf angelegt (eigene Einstellungen)"
+else
+  echo "OK: /etc/gaming-vm.conf vorhanden – bleibt unverändert"
+fi
 mkdir -p /var/lib/game-disk-sync
 echo "OK: Skripte nach /usr/local/sbin installiert"
 

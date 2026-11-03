@@ -10,7 +10,7 @@
 #                                     Master-Platte sofort verteilen, z.B. nach einer neuen
 #                                     Spiel-Installation am Tag. Laufende Kinder-VMs werden
 #                                     übersprungen und bekommen den Stand beim nächsten Lauf.
-#   gaming-nightly.sh --now           Wie der Nachtlauf, aber tagsüber per Knopf (Spielebibliothek):
+#   gaming-nightly.sh --now [VMID..]  Wie der Nachtlauf, aber tagsüber per Knopf (Spielebibliothek):
 #                                     laufende Kinder-VMs werden NICHT heruntergefahren, sondern
 #                                     übersprungen und bekommen den Stand in der nächsten Nacht.
 #   gaming-nightly.sh --status        Zeigt, welchen D:-Stand jede Kinder-VM hat.
@@ -39,6 +39,8 @@ KEEP_SNAPSHOTS=3
 SNAP_PREFIX="nightly"
 FORCE_STOP_MASTER=1                 # reagiert der Master auch auf den Notfall-Shutdown nicht: hart ausschalten (1) oder anlassen (0)
 # -----------------------------------------------------------------------------
+# Eigene Einstellungen (bleiben bei gaming-update erhalten) überschreiben die Werte oben
+[[ -f /etc/gaming-vm.conf ]] && source /etc/gaming-vm.conf
 
 log() { echo "$(date '+%F %T') [gaming-nightly] $*"; }
 die() { log "FEHLER: $*"; exit 1; }
@@ -46,6 +48,7 @@ usage() { sed -n '4,20p' "$0" | sed 's/^# \{0,1\}//'; }
 
 MODE=full
 NOW=0
+ONLY=()                             # nur diese Kinder-VMs (bei --now / --rollout-only)
 case "${1:-}" in
   "")              ;;
   --now)           NOW=1; SHUTDOWN_RUNNING_PLAYERS=0 ;;
@@ -54,6 +57,12 @@ case "${1:-}" in
   -h|--help)       usage; exit 0 ;;
   *)               usage; die "Unbekannte Option: $1" ;;
 esac
+shift || true
+for a in "$@"; do
+  [[ "$a" =~ ^[0-9]+$ ]] || die "Ungültige VMID: $a"
+  [[ "$MODE" == "status" ]] && die "--status nimmt keine VMIDs"
+  ONLY+=("$a")
+done
 
 [[ $EUID -eq 0 ]] || die "Bitte als root ausführen."
 
@@ -94,6 +103,12 @@ discover_players() {
 
 if (( ${#PLAYERS[@]} == 0 )); then
   mapfile -t PLAYERS < <(discover_players)
+fi
+if (( ${#ONLY[@]} > 0 )); then
+  for id in "${ONLY[@]}"; do
+    [[ " ${PLAYERS[*]} " == *" $id "* ]] || die "VM $id ist keine Kinder-VM (kein ${PLAYER_SLOT}: ${STORAGE}:vm-${id}-games)"
+  done
+  PLAYERS=("${ONLY[@]}")
 fi
 
 # ---------------------------- Status -----------------------------------------

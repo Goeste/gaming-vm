@@ -9,6 +9,7 @@ Zugriff nur ueber Home-Assistant-Ingress (Anmeldung + nur Administratoren).
 """
 import json
 import os
+import re
 
 import subprocess
 import threading
@@ -22,7 +23,8 @@ DATA = os.environ.get("SB_DATA", "/data")
 OPTIONS_FILE = os.path.join(DATA, "options.json")
 CACHE_FILE = os.path.join(DATA, "owned.json")
 SSH_DIR = os.path.join(DATA, "ssh")
-SSH_KEY = os.path.join(SSH_DIR, "id_ed25519")
+SSH_KEY = os.path.join(SSH_DIR, "id_ed25519")          # selbst erzeugt, falls ssh_private_key leer
+SSH_KEY_CFG = os.path.join(SSH_DIR, "id_config")       # aus der Konfiguration (ssh_private_key)
 STEAM_API = os.environ.get("SB_STEAM_API", "https://api.steampowered.com")
 DEV = os.environ.get("SB_DEV") == "1"          # nur für lokale Tests: ohne Ingress-Pruefung
 INGRESS_IP = "172.30.32.2"
@@ -50,7 +52,22 @@ def options():
     o.setdefault("library_folder", "/share/gaming/Bibliothek")
     o.setdefault("proxmox_host", "")
     o.setdefault("proxmox_user", "root")
+    o.setdefault("ssh_private_key", "")
+    o.setdefault("master_vmid", 2190)
+    o.setdefault("vms", [])
     return o
+
+
+def kid_vms(o=None):
+    """Kinder-VMs aus der Konfiguration: [(vmid, name), ...]"""
+    o = o or options()
+    out = []
+    for v in o["vms"]:
+        try:
+            out.append((int(v["vmid"]), str(v.get("name") or "")))
+        except (KeyError, TypeError, ValueError):
+            pass
+    return out
 
 
 def read_json(path, default):
@@ -148,20 +165,44 @@ def refresh_cache():
 
 
 # ---------------------------------------------------------------- SSH zum Host
+def normalize_key(k):
+    """Privaten Schlüssel aus der Konfiguration wieder in Form bringen (Zeilenumbrüche gehen beim Einfügen oft verloren)."""
+    m = re.search(r"-----BEGIN ([A-Z ]+)-----(.*?)-----END \1-----", k or "", re.S)
+    if not m:
+        return None
+    body = re.sub(r"\s+", "", m.group(2))
+    lines = [body[i:i + 70] for i in range(0, len(body), 70)]
+    return f"-----BEGIN {m.group(1)}-----\n" + "\n".join(lines) + f"\n-----END {m.group(1)}-----\n"
+
+
 def ensure_key():
+    """Liefert (Pfad zum privaten Schlüssel, Fehler). Vorrang hat ssh_private_key aus der Konfiguration."""
     os.makedirs(SSH_DIR, mode=0o700, exist_ok=True)
+    cfg = options().get("ssh_private_key", "")
+    if cfg.strip():
+        key = normalize_key(cfg)
+        if not key:
+            return None, "ssh_private_key in der Konfiguration ist kein gültiger privater Schlüssel"
+        old = open(SSH_KEY_CFG, encoding="utf-8").read() if os.path.exists(SSH_KEY_CFG) else None
+        if old != key:
+            fd = os.open(SSH_KEY_CFG, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(key)
+        return SSH_KEY_CFG, None
     if not os.path.exists(SSH_KEY):
         subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "spielebibliothek-ha",
                         "-f", SSH_KEY], check=True)
-    with open(SSH_KEY + ".pub", encoding="utf-8") as f:
-        return f.read().strip()
+    return SSH_KEY, None
 
 
 def ssh(arg, timeout=20):
     o = options()
     if not o["proxmox_host"]:
         return None, "Kein Proxmox-Host konfiguriert"
-    cmd = ["ssh", "-i", SSH_KEY, "-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
+    key, err = ensure_key()
+    if err:
+        return None, err
+    cmd = ["ssh", "-i", key, "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "IdentitiesOnly=yes",
            "-o", "StrictHostKeyChecking=accept-new",
            "-o", f"UserKnownHostsFile={os.path.join(SSH_DIR, 'known_hosts')}",
            # "--" und ein Befehlsname vorne: sonst liest ssh "--status" als eigene Option
@@ -175,7 +216,10 @@ def ssh(arg, timeout=20):
     out = (p.stdout or "").strip()
     err = (p.stderr or "").strip()
     if p.returncode != 0:
-        return None, err or out or f"Exit-Code {p.returncode}"
+        msg = err or out or f"Exit-Code {p.returncode}"
+        if "Permission denied" in msg:
+            msg += " - auf dem Host 'gaming-ha-key' ausführen und die Ausgabe in der Konfiguration bei ssh_private_key einfügen (Anleitung 13.4)"
+        return None, msg
     return out, None
 
 
@@ -267,10 +311,6 @@ def state():
         out.append(g)
     out.sort(key=lambda x: x["name"].lower())
 
-    try:
-        pub = ensure_key()
-    except Exception as e:                           # pylint: disable=broad-except
-        pub = f"(Schlüssel konnte nicht erzeugt werden: {e})"
     return jsonify({
         "games": out,
         "accounts": [a["name"] for a in o["accounts"]],
@@ -282,7 +322,7 @@ def state():
         "folder": bib_dir(),
         "folder_ok": folder_ok,
         "host_configured": bool(o["proxmox_host"]),
-        "authorized_key": f'command="/usr/local/sbin/game-disk-sync.sh",restrict {pub}',
+        "vms_configured": len(kid_vms(o)) > 0,
     })
 
 
@@ -325,8 +365,8 @@ def run_now():
         write_json_atomic(order_path(), order)
     if not options()["proxmox_host"]:
         return jsonify({"ok": True, "message": "Vorgemerkt - wird im nächsten Nachtlauf erledigt (kein Proxmox-Host eingetragen)."})
-    ensure_key()
-    out, err = ssh("--full-now", timeout=30)
+    ids = " ".join(str(v) for v, _ in kid_vms())
+    out, err = ssh(f"--full-now {ids}".strip(), timeout=30)
     if err:
         return jsonify({"ok": False, "error": err})
     return jsonify({"ok": True, "message": out or "Master wird gestartet."})
@@ -336,14 +376,47 @@ def run_now():
 def host():
     if not options()["proxmox_host"]:
         return jsonify({"ok": False, "error": "nicht konfiguriert"})
-    ensure_key()
     out, err = ssh("--status")
     if err:
         return jsonify({"ok": False, "error": err})
     try:
-        return jsonify({"ok": True, "status": json.loads(out)})
+        st = json.loads(out)
     except ValueError:
         return jsonify({"ok": False, "error": out[:300]})
+    o = options()
+    host_vms = {int(v["vmid"]): v for v in st.get("vms") or []}
+    rows = [{"vmid": int(o["master_vmid"]), "name": "Master", "role": "master",
+             "status": st.get("master"), "snapshot": None, "current": None, "known": True}]
+    wanted = kid_vms(o) or [(vid, "") for vid in sorted(host_vms)]
+    for vid, name in wanted:
+        h = host_vms.get(vid)
+        rows.append({"vmid": vid, "name": name or (h or {}).get("name") or str(vid), "role": "kind",
+                     "status": h.get("status") if h else "unbekannt", "snapshot": h.get("snapshot") if h else None,
+                     "current": h.get("current") if h else None, "known": bool(h)})
+    return jsonify({"ok": True, "busy": st.get("busy"), "latest_snapshot": st.get("latest_snapshot"),
+                    "master_changed_bytes": st.get("master_changed_bytes"), "last_run": st.get("last_run"),
+                    "rows": rows})
+
+
+@app.post("/api/vm")
+def vm_action():
+    body = request.get_json(silent=True) or {}
+    action = body.get("action")
+    o = options()
+    allowed = {int(o["master_vmid"])} | {v for v, _ in kid_vms(o)}
+    try:
+        ids = [int(x) for x in body.get("vmids") or []]
+    except (TypeError, ValueError):
+        abort(400)
+    if action == "sync":
+        ids = [i for i in ids if i != int(o["master_vmid"])]
+    if action not in ("start", "shutdown", "sync") or not ids or any(i not in allowed for i in ids):
+        return jsonify({"ok": False, "error": "VM nicht in der Konfiguration (master_vmid / vms)"}), 400
+    arg = "--detach" if action == "sync" else f"--{action}"
+    out, err = ssh(f"{arg} " + " ".join(map(str, ids)), timeout=30)
+    if err:
+        return jsonify({"ok": False, "error": err})
+    return jsonify({"ok": True, "message": out})
 
 
 def auto_refresh():
@@ -357,8 +430,18 @@ def auto_refresh():
 
 if __name__ == "__main__":
     try:
-        ensure_key()
+        path, err = ensure_key()
+        if err:
+            print("SSH-Schlüssel:", err, flush=True)
+        elif path == SSH_KEY:
+            with open(SSH_KEY + ".pub", encoding="utf-8") as f:
+                pub = f.read().strip()
+            print("Kein ssh_private_key konfiguriert - selbst erzeugter Schlüssel. Zeile für /root/.ssh/authorized_keys:", flush=True)
+            print(f'command="/usr/local/sbin/game-disk-sync.sh",restrict {pub}', flush=True)
+            print("Einfacher: auf dem Host 'gaming-ha-key' ausführen und die Ausgabe bei ssh_private_key eintragen.", flush=True)
+        else:
+            print("SSH-Schlüssel aus der Konfiguration (ssh_private_key) wird verwendet.", flush=True)
     except Exception as e:                           # pylint: disable=broad-except
-        print("SSH-Schlüssel:", e)
+        print("SSH-Schlüssel:", e, flush=True)
     threading.Thread(target=auto_refresh, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("SB_PORT", "8099")), threaded=True)

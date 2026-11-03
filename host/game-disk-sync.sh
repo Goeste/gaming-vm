@@ -14,7 +14,9 @@
 #                          (Standard: laufende VMs überspringen)
 #     --detach             im Hintergrund weiterlaufen, sofort zurückkehren (für Home Assistant)
 #     --status             aktuellen Stand als JSON ausgeben (für einen Home-Assistant-Sensor)
-#     --full-now           Master JETZT starten (Spiele installieren/aktualisieren) und danach
+#     --start VMID..       VMs starten (nur Master und Kinder-VMs; im Hintergrund)
+#     --shutdown VMID..    VMs sauber herunterfahren (nur Master und Kinder-VMs; im Hintergrund)
+#     --full-now [VMID..]  Master JETZT starten (Spiele installieren/aktualisieren) und danach
 #                          verteilen: startet "gaming-nightly.sh --now" im Hintergrund
 #                          (Knopf der Spielebibliothek). Laufende Kinder-VMs werden übersprungen.
 #
@@ -41,6 +43,8 @@ LOCKFILE=/run/gaming-nightly.lock   # gemeinsames Lock: nie gleichzeitig mit dem
 LOGFILE=/var/log/game-disk-sync.log
 STATEDIR=/var/lib/game-disk-sync
 # -----------------------------------------------------------------------------
+# Eigene Einstellungen (bleiben bei gaming-update erhalten) überschreiben die Werte oben
+[[ -f /etc/gaming-vm.conf ]] && source /etc/gaming-vm.conf
 
 log() {
   local line
@@ -49,7 +53,7 @@ log() {
   echo "$line" >> "$LOGFILE" 2>/dev/null || true
 }
 die() { log "FEHLER: $*"; write_result "error" "$*"; exit 1; }
-usage() { sed -n '4,27p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '4,29p' "$0" | sed 's/^# \{0,1\}//'; }
 
 UPDATED=(); SKIPPED=(); CURRENT=(); SNAP=""
 json_list() { local IFS=,; echo "[${*:-}]"; }
@@ -69,7 +73,7 @@ if (( ${#ARGS[@]} == 0 )) && [[ -n "${SSH_ORIGINAL_COMMAND:-}" ]]; then
   for w in "${words[@]}"; do
     case "$w" in
       game-disk-sync|*/game-disk-sync.sh|game-disk-sync.sh) ;;
-      --shutdown-running|--detach|--status|--full-now|[0-9]*) ARGS+=("$w") ;;
+      --shutdown-running|--detach|--status|--full-now|--start|--shutdown|[0-9]*) ARGS+=("$w") ;;
       *) echo "Unzulässiges Argument: $w" >&2; exit 1 ;;
     esac
   done
@@ -82,6 +86,8 @@ for a in "${ARGS[@]}"; do
     --detach)           DETACH=1 ;;
     --status)           MODE=status ;;
     --full-now)         MODE=full ;;
+    --start)            MODE=start ;;
+    --shutdown)         MODE=shutdown ;;
     -h|--help)          usage; exit 0 ;;
     *[!0-9]*|"")        usage; echo "Unbekanntes Argument: $a" >&2; exit 1 ;;
     *)                  TARGETS+=("$a") ;;
@@ -97,7 +103,7 @@ if [[ "$MODE" == "full" ]]; then
   fi
   [[ "$(qm status "$MASTER_VMID" 2>/dev/null | awk '{print $2}')" == "stopped" ]] \
     || { echo "Master $MASTER_VMID läuft – bitte erst herunterfahren." >&2; exit 2; }
-  setsid nohup /usr/local/sbin/gaming-nightly.sh --now >> /var/log/gaming-nightly.log 2>&1 < /dev/null &
+  setsid nohup /usr/local/sbin/gaming-nightly.sh --now "${TARGETS[@]}" >> /var/log/gaming-nightly.log 2>&1 < /dev/null &
   echo "Master wird gestartet – Fortschritt: /var/log/gaming-nightly.log"
   exit 0
 fi
@@ -144,6 +150,33 @@ discover_players() {
 
 mapfile -t ALL_PLAYERS < <(discover_players)
 
+# ---------------------------- Starten / Herunterfahren -----------------------
+if [[ "$MODE" == "start" || "$MODE" == "shutdown" ]]; then
+  (( ${#TARGETS[@]} > 0 )) || { echo "Keine VMID angegeben." >&2; exit 1; }
+  if ! flock -n "$LOCKFILE" true 2>/dev/null; then
+    echo "Nachtlauf oder Sync läuft gerade – bitte später." >&2; exit 2
+  fi
+  for id in "${TARGETS[@]}"; do
+    ok=0; [[ "$id" == "$MASTER_VMID" ]] && ok=1
+    for p in "${ALL_PLAYERS[@]}"; do [[ "$p" == "$id" ]] && ok=1; done
+    (( ok )) || { echo "VM $id ist weder Master noch Kinder-VM – abgelehnt." >&2; exit 1; }
+  done
+  for id in "${TARGETS[@]}"; do
+    st=$(vm_status "$id")
+    if [[ "$MODE" == "start" ]]; then
+      if [[ "$st" == "running" ]]; then echo "VM $id läuft bereits"; continue; fi
+      # Start mit langer Wartezeit (VMs mit durchgereichter Grafikkarte brauchen länger)
+      setsid nohup qm start "$id" --timeout 300 >> "$LOGFILE" 2>&1 < /dev/null &
+      log "VM $id wird gestartet (Spielebibliothek)"; echo "VM $id wird gestartet"
+    else
+      if [[ "$st" != "running" ]]; then echo "VM $id ist bereits aus"; continue; fi
+      setsid nohup qm shutdown "$id" --timeout "$PLAYER_SHUTDOWN_TIMEOUT" >> "$LOGFILE" 2>&1 < /dev/null &
+      log "VM $id wird heruntergefahren (Spielebibliothek)"; echo "VM $id wird heruntergefahren"
+    fi
+  done
+  exit 0
+fi
+
 # ---------------------------- Status (JSON) ----------------------------------
 if [[ "$MODE" == "status" ]]; then
   latest=$(latest_snap)
@@ -157,7 +190,7 @@ if [[ "$MODE" == "status" ]]; then
   done
   last="null"; [[ -f "$STATEDIR/last.json" ]] && last=$(tr -d '\n' < "$STATEDIR/last.json")
   busy=false; flock -n "$LOCKFILE" true 2>/dev/null || busy=true
-  echo "{\"busy\":$busy,\"master\":\"$(vm_status "$MASTER_VMID")\",\"latest_snapshot\":\"${latest#*@}\",\"master_changed_bytes\":${written:-0},\"vms\":$(json_list "${vms[@]}"),\"last_run\":$last}"
+  echo "{\"busy\":$busy,\"master_vmid\":$MASTER_VMID,\"master\":\"$(vm_status "$MASTER_VMID")\",\"latest_snapshot\":\"${latest#*@}\",\"master_changed_bytes\":${written:-0},\"vms\":$(json_list "${vms[@]}"),\"last_run\":$last}"
   exit 0
 fi
 

@@ -686,7 +686,7 @@ Wichtig: `Bibliothek` liegt direkt in der Freigabe, die du im Master bei `setup-
 2. `https://github.com/Goeste/gaming-vm` eintragen → **Hinzufügen** → schließen, Seite neu laden.
 3. Im App-Store erscheint der Abschnitt **Gaming-VM (Goeste)** mit **Spielebibliothek** → **Installieren**.
    Home Assistant baut die App selbst (1–3 Minuten). Neue Versionen erscheinen später als normales Update.
-3. Reiter **Konfiguration**:
+4. Reiter **Konfiguration**:
    ```yaml
    steam_api_key: "DEIN-KEY"
    accounts:
@@ -694,24 +694,48 @@ Wichtig: `Bibliothek` liegt direkt in der Freigabe, die du im Master bei `setup-
        steamid: "76561198000000001"
      - name: Emma
        steamid: "76561198000000002"
-   library_folder: /share/gaming/Bibliothek
-   proxmox_host: 192.168.1.10        # IP des Proxmox-Hosts, leer lassen = nur nachts
+   library_folder: /share/gaming/prep_savegames/Bibliothek   # Ordner "Bibliothek" in der Freigabe aus share.json
+   proxmox_host: 192.168.2.12        # IP des Proxmox-Hosts, leer lassen = nur nachts
    proxmox_user: root
+   ssh_private_key: ""               # siehe 13.4
+   master_vmid: 2190
+   vms:                              # Kinder-VMs, die die App anzeigt und steuert
+     - vmid: 2193
+       name: Felix
+     - vmid: 2194
+       name: Emma
+     - vmid: 2195
+     - vmid: 2196
    ```
-4. Starten, **In Seitenleiste anzeigen** einschalten.
+   `name` ist optional, ohne Namen zeigt die App den Namen aus Proxmox.
+5. Starten, **In Seitenleiste anzeigen** einschalten.
 
-### 13.4 Knopf „Jetzt installieren und verteilen“ freischalten (Proxmox)
-1. Die Seite öffnen, ganz unten **Einrichtung: SSH-Schlüssel** aufklappen und die Zeile kopieren. Sie beginnt mit
-   `command="/usr/local/sbin/game-disk-sync.sh",restrict ssh-ed25519 …`.
-2. Auf dem Host an `/root/.ssh/authorized_keys` anhängen:
+### 13.4 Verbindung zum Proxmox-Host (SSH-Schlüssel)
+Über SSH zeigt die App die VMs, startet und stoppt sie, verteilt D: und startet den Master für
+„Jetzt installieren und verteilen“. Der Schlüssel darf auf dem Host **nur** `game-disk-sync.sh` aufrufen, und dieses
+Skript akzeptiert nur den Master und die Kinder-VMs (Frigate 2067 o. ä. lehnt es ab).
+
+1. Auf dem Host die neuen Skripte holen und den Schlüssel erzeugen:
    ```bash
-   nano /root/.ssh/authorized_keys      # Zeile unten einfügen, speichern
+   gaming-update
+   gaming-ha-key
    ```
-3. Die neuen Host-Skripte installieren: `bash install-host.sh` im Ordner `host` (neu: `game-disk-sync.sh --full-now`,
-   `gaming-nightly.sh --now`).
-4. Auf der Seite **Proxmox-Host und Kinder-VMs** aufklappen. Erscheint die Tabelle der VMs, klappt die Verbindung.
+   `gaming-ha-key` trägt den öffentlichen Teil in `/root/.ssh/authorized_keys` ein (alte Einträge der Spielebibliothek
+   werden ersetzt) und zeigt den privaten Teil an.
+2. In Home Assistant: Spielebibliothek → **Konfiguration** → `ssh_private_key`: den ganzen angezeigten Block einfügen,
+   von `-----BEGIN OPENSSH PRIVATE KEY-----` bis `-----END OPENSSH PRIVATE KEY-----`. Fehlende Zeilenumbrüche
+   sind egal. Speichern, App neu starten.
+3. Auf der Seite steht jetzt der Bereich **VMs** mit Master und Kinder-VMs.
 
-Ein Schlüssel aus Abschnitt 7 (Home-Assistant-Automationen) kann bleiben. Die App hat ihren eigenen.
+Ohne `ssh_private_key` erzeugt die App selbst einen Schlüssel; die Zeile für `authorized_keys` steht dann im
+**Protokoll** der App. Ein Schlüssel aus Abschnitt 7 (Home-Assistant-Automationen) kann bleiben.
+
+**Was die App auf dem Host darf:**
+| Knopf | Befehl auf dem Host |
+|---|---|
+| Jetzt installieren und verteilen | `gaming-nightly.sh --now <VMs aus der Konfiguration>` |
+| Nur verteilen | `game-disk-sync.sh <VMs>` – nur ausgeschaltete VMs, Master muss aus sein |
+| Starten / Herunterfahren | `qm start` bzw. `qm shutdown` – nur Master und Kinder-VMs, nicht während des Nachtlaufs |
 
 ### 13.5 Master
 Im Master als Administrator (die Freigabe muss nach 6.9 mit `-Master` eingerichtet sein):
@@ -770,8 +794,10 @@ holt jede Maschine die neueste Version mit einem Befehl. Im Repository stehen ke
 curl -fsSL https://raw.githubusercontent.com/Goeste/gaming-vm/main/host/gaming-update.sh | bash   # erstes Mal
 gaming-update                                                                                         # danach
 ```
-Das lädt das Paket nach `/opt/gaming-vm` und führt `install-host.sh` aus. Eigene Änderungen an den Skripten in
-`/usr/local/sbin` werden dabei überschrieben – Einstellungen also im Repository ändern, nicht auf dem Host.
+Das lädt das Paket nach `/opt/gaming-vm` und führt `install-host.sh` aus. Die Skripte in `/usr/local/sbin` werden
+dabei überschrieben. **Eigene Einstellungen** (z. B. `SHUTDOWN_RUNNING_PLAYERS=0`) gehören deshalb in
+`/etc/gaming-vm.conf`. Die Datei legt `install-host.sh` beim ersten Mal mit allen Werten auskommentiert an und lässt
+sie danach in Ruhe.
 
 **Master und jede Kinder-VM** (PowerShell als Administrator):
 ```powershell

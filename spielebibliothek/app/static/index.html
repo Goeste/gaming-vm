@@ -66,6 +66,15 @@
     .stat b { font-size: 15px; }
     .actions { width: 100%; } .actions button { flex: 1; }
   }
+  .vmbox { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin: 6px 0 14px; }
+  .vmhead { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
+  .vmhead .actions { margin-left: auto; }
+  .vmrow { display: grid; grid-template-columns: minmax(120px, 1.4fr) 90px minmax(110px, 1fr) auto; gap: 8px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line); }
+  .vmrow:first-child { border-top: 0; }
+  .vmrow .btns { display: flex; gap: 6px; justify-content: flex-end; }
+  .vmrow button { padding: 5px 10px; }
+  .pill { font-size: 12px; font-weight: 600; }
+  @media (max-width: 640px) { .vmrow { grid-template-columns: 1fr auto; } .vmrow .d { display: none; } }
   #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line); padding: 9px 14px; border-radius: 8px; display: none; max-width: calc(100% - 32px); z-index: 9; }
 </style>
 </head>
@@ -98,18 +107,18 @@
 </header>
 <main>
   <div class="wrap">
+    <section class="vmbox">
+      <div class="vmhead">
+        <b>VMs</b> <span class="sub" id="vmsub">lade ...</span>
+        <div class="actions">
+          <button id="btnSync" title="Aktuellen Stand der Master-Platte an alle ausgeschalteten Kinder-VMs verteilen (ohne Master-Start)">Nur verteilen</button>
+          <button id="btnAllOff" class="danger" title="Alle Kinder-VMs sauber herunterfahren">Alle Kinder-VMs herunterfahren</button>
+        </div>
+      </div>
+      <div id="vms"></div>
+    </section>
     <div class="grid" id="grid"></div>
     <div class="empty" id="empty" hidden>Keine Spiele gefunden.</div>
-    <details id="hostBox">
-      <summary>Proxmox-Host und Kinder-VMs</summary>
-      <div id="host" class="sub">-</div>
-    </details>
-    <details>
-      <summary>Einrichtung: SSH-Schlüssel für den Proxmox-Host</summary>
-      <p class="sub">Diese Zeile auf dem Proxmox-Host in <code>/root/.ssh/authorized_keys</code> eintragen. Der Schlüssel darf dann nur <code>game-disk-sync.sh</code> aufrufen (Status abfragen, Master starten, verteilen) - sonst nichts.</p>
-      <code class="key" id="key"></code>
-      <button id="btnCopy">Kopieren</button>
-    </details>
   </div>
 </main>
 <div id="toast"></div>
@@ -195,7 +204,6 @@ function renderHead() {
   $('#notices').innerHTML = n.map(([c, t]) => `<div class="notice ${c}">${t}</div>`).join('');
   const sel = $('#owner'), cur = sel.value;
   sel.innerHTML = '<option value="">Alle Konten</option>' + S.accounts.map(a => `<option ${a === cur ? 'selected' : ''}>${esc(a)}</option>`).join('');
-  $('#key').textContent = S.authorized_key;
 }
 
 async function load() {
@@ -204,14 +212,50 @@ async function load() {
   S = j; renderHead(); render();
 }
 
+let H = null;
 async function loadHost() {
   const j = await api('api/host');
-  if (!j.ok) { $('#host').textContent = 'Nicht verfügbar: ' + (j.error || '?'); return; }
-  const s = j.status;
-  const rows = (s.vms || []).map(v => `<tr><td>${v.vmid}</td><td>${esc(v.name)}</td><td>${esc(v.status)}</td><td>${esc(v.snapshot)}</td><td>${v.current ? 'aktuell' : '<span class="b-warn">veraltet</span>'}</td></tr>`).join('');
-  $('#host').innerHTML = `Master: <b>${esc(s.master)}</b>${s.busy ? ' - <span class="b-warn">Lauf aktiv</span>' : ''} - neuester Stand: ${esc(s.latest_snapshot || '-')}
-    <table class="vms"><tr><th>VM</th><th>Name</th><th>Status</th><th>D:-Stand</th><th></th></tr>${rows}</table>`;
+  H = j;
+  if (!j.ok) {
+    $('#vmsub').textContent = '';
+    $('#vms').innerHTML = `<div class="err">Host nicht erreichbar: ${esc(j.error || '?')}</div>`;
+    return;
+  }
+  $('#vmsub').innerHTML = `neuester D:-Stand: ${esc(j.latest_snapshot || '-')}` + (j.busy ? ' - <span class="b-warn">Nachtlauf/Verteilen läuft</span>' : '');
+  $('#vms').innerHTML = j.rows.map(v => {
+    const on = v.status === 'running', st = !v.known ? ['nicht gefunden', 'b-bad'] : on ? ['läuft', 'b-ok'] : v.status === 'stopped' ? ['aus', 'b-muted'] : [v.status, 'b-warn'];
+    const d = v.role === 'master' ? 'Master (D:-Quelle)' : v.current === true ? 'D: aktuell' : v.current === false ? '<span class="b-warn">D: veraltet</span>' : '';
+    const dis = (!v.known || j.busy) ? 'disabled' : '';
+    const btn = on ? `<button class="danger" data-vm="shutdown" data-id="${v.vmid}" ${dis}>Herunterfahren</button>`
+                   : `<button data-vm="start" data-id="${v.vmid}" ${dis}>Starten</button>`;
+    return `<div class="vmrow"><div><b>${esc(v.name)}</b> <span class="sub">${v.vmid}</span></div>
+      <span class="pill ${st[1]}">${esc(st[0])}</span><span class="d sub">${d}</span><div class="btns">${btn}</div></div>`;
+  }).join('');
 }
+
+async function vmAction(action, ids, question) {
+  if (question && !confirm(question)) return;
+  const j = await api('api/vm', { action, vmids: ids });
+  toast(j.ok ? (j.message || 'OK') : 'Fehler: ' + j.error, 6000);
+  setTimeout(loadHost, 3000);
+}
+$('#vms').addEventListener('click', e => {
+  const b = e.target.closest('button[data-vm]'); if (!b) return;
+  const id = +b.dataset.id, row = H.rows.find(r => r.vmid === id), a = b.dataset.vm;
+  if (a === 'shutdown') vmAction('shutdown', [id], `${row.name} (${id}) jetzt herunterfahren? Laufende Spiele werden beendet.`);
+  else if (row.role === 'master') vmAction('start', [id], 'Master starten? Tagsüber aktualisiert er nichts von selbst - zum Installieren lieber "Jetzt installieren und verteilen".');
+  else vmAction('start', [id]);
+});
+$('#btnAllOff').addEventListener('click', () => {
+  const ids = (H && H.rows || []).filter(r => r.role === 'kind' && r.status === 'running').map(r => r.vmid);
+  if (!ids.length) return toast('Keine Kinder-VM läuft');
+  vmAction('shutdown', ids, `Alle laufenden Kinder-VMs (${ids.join(', ')}) herunterfahren?`);
+});
+$('#btnSync').addEventListener('click', () => {
+  const ids = (H && H.rows || []).filter(r => r.role === 'kind' && r.known).map(r => r.vmid);
+  if (!ids.length) return toast('Keine Kinder-VMs');
+  vmAction('sync', ids, 'Aktuellen Stand der Master-Platte jetzt an die ausgeschalteten Kinder-VMs verteilen?\nLaufende VMs werden übersprungen.');
+});
 
 $('#grid').addEventListener('click', async e => {
   const b = e.target.closest('button[data-a]'); if (!b) return;
@@ -240,10 +284,6 @@ $('#btnNow').addEventListener('click', async e => {
   toast(j.ok ? (j.message || 'Gestartet') : 'Fehler: ' + j.error, 7000);
   load(); loadHost();
 });
-$('#btnCopy').addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText(S.authorized_key); toast('Kopiert'); } catch (e) { toast('Bitte von Hand markieren und kopieren'); }
-});
-$('#hostBox').addEventListener('toggle', e => { if (e.target.open) loadHost(); });
 
 // Fallback, wenn das Spielbild fehlt
 new MutationObserver(() => document.querySelectorAll('.cap:not([data-c])').forEach(c => {
@@ -251,8 +291,9 @@ new MutationObserver(() => document.querySelectorAll('.cap:not([data-c])').forEa
   im.onerror = () => { c.style.backgroundImage = 'none'; c.querySelector('span').hidden = false; }; im.src = url;
 })).observe($('#grid'), { childList: true });
 
-load();
+load(); loadHost();
 setInterval(load, 60000);
+setInterval(loadHost, 30000);
 </script>
 </body>
 </html>
