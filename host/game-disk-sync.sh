@@ -34,6 +34,7 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 MASTER_VMID=2190
 MASTER_VOLUME="vm-2190-disk-3"      # D: des Masters
 STORAGE="data"
+PVE_CONF_DIR="/etc/pve/qemu-server"   # VM-Konfigurationen dieses Hosts
 PLAYER_SLOT="scsi1"
 DISK_OPTS="cache=writeback,discard=on,iothread=1,ssd=1,backup=0"
 PLAYER_SHUTDOWN_TIMEOUT=300
@@ -138,15 +139,29 @@ latest_snap() {
   zfs list -H -t snapshot -o name -s creation -d 1 "$SRC_DS" | grep "@${SNAP_PREFIX}-" | tail -n 1 || true
 }
 
+# VM-Konfigurationen direkt lesen statt "qm list"/"qm config" pro VM (die fragen jede VM ab und
+# brauchen bei vielen VMs oder einer hängenden VM viele Sekunden). Nur der aktuelle Stand, keine Snapshots.
+vm_conf() { awk '/^\[/ {exit} {print}' "${PVE_CONF_DIR}/$1.conf" 2>/dev/null; }
+
 discover_players() {
-  local id
-  for id in $(qm list | awk 'NR>1 {print $1}'); do
-    [[ "$id" == "$MASTER_VMID" ]] && continue
-    if qm config "$id" 2>/dev/null | grep -qE "^${PLAYER_SLOT}: ${STORAGE}:vm-${id}-games(,|$)"; then
+  local f id
+  for f in "${PVE_CONF_DIR}"/*.conf; do
+    [[ -e "$f" ]] || continue
+    id=$(basename "$f" .conf)
+    [[ "$id" =~ ^[0-9]+$ && "$id" != "$MASTER_VMID" ]] || continue
+    if vm_conf "$id" | grep -qE "^${PLAYER_SLOT}: ${STORAGE}:vm-${id}-games(,|$)"; then
       echo "$id"
     fi
   done
 }
+
+# Schneller Status ohne "qm": läuft der QEMU-Prozess dieser VM?
+vm_running_fast() {
+  local pid
+  pid=$(cat "/var/run/qemu-server/$1.pid" 2>/dev/null) || return 1
+  [[ -n "$pid" ]] && tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q -- "-id $1 "
+}
+vm_status_fast() { if vm_running_fast "$1"; then echo running; else echo stopped; fi; }
 
 mapfile -t ALL_PLAYERS < <(discover_players)
 
@@ -183,14 +198,14 @@ if [[ "$MODE" == "status" ]]; then
   written=$(zfs get -H -p -o value written "$SRC_DS" 2>/dev/null || echo 0)
   vms=()
   for id in "${ALL_PLAYERS[@]}"; do
-    name=$(qm config "$id" | awk '/^name:/ {print $2}')
+    name=$(vm_conf "$id" | awk '/^name:/ {print $2}')
     origin=$(zfs get -H -o value origin "${PARENT_DS}/vm-${id}-games" 2>/dev/null || echo "-")
     cur=false; [[ -n "$latest" && "$origin" == "$latest" ]] && cur=true
-    vms+=("{\"vmid\":$id,\"name\":\"$name\",\"status\":\"$(vm_status "$id")\",\"snapshot\":\"${origin#*@}\",\"current\":$cur}")
+    vms+=("{\"vmid\":$id,\"name\":\"$name\",\"status\":\"$(vm_status_fast "$id")\",\"snapshot\":\"${origin#*@}\",\"current\":$cur}")
   done
   last="null"; [[ -f "$STATEDIR/last.json" ]] && last=$(tr -d '\n' < "$STATEDIR/last.json")
   busy=false; flock -n "$LOCKFILE" true 2>/dev/null || busy=true
-  echo "{\"busy\":$busy,\"master_vmid\":$MASTER_VMID,\"master\":\"$(vm_status "$MASTER_VMID")\",\"latest_snapshot\":\"${latest#*@}\",\"master_changed_bytes\":${written:-0},\"vms\":$(json_list "${vms[@]}"),\"last_run\":$last}"
+  echo "{\"busy\":$busy,\"master_vmid\":$MASTER_VMID,\"master\":\"$(vm_status_fast "$MASTER_VMID")\",\"latest_snapshot\":\"${latest#*@}\",\"master_changed_bytes\":${written:-0},\"vms\":$(json_list "${vms[@]}"),\"last_run\":$last}"
   exit 0
 fi
 

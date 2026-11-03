@@ -221,7 +221,8 @@ async function loadHost() {
     $('#vms').innerHTML = `<div class="err">Host nicht erreichbar: ${esc(j.error || '?')}</div>`;
     return;
   }
-  $('#vmsub').innerHTML = `neuester D:-Stand: ${esc(j.latest_snapshot || '-')}` + (j.busy ? ' - <span class="b-warn">Nachtlauf/Verteilen läuft</span>' : '');
+  $('#vmsub').innerHTML = `neuester D:-Stand: ${esc(j.latest_snapshot || '-')}` + (j.busy ? ' - <span class="b-warn">Nachtlauf/Verteilen läuft</span>' : '')
+    + (j.stale ? ` - <span class="b-warn" title="${esc(j.error)}">Host antwortet gerade nicht, Stand von vor ${j.age < 120 ? j.age + ' s' : Math.round(j.age / 60) + ' min'}</span>` : '');
   $('#vms').innerHTML = j.rows.map(v => {
     const on = v.status === 'running', st = !v.known ? ['nicht gefunden', 'b-bad'] : on ? ['läuft', 'b-ok'] : v.status === 'stopped' ? ['aus', 'b-muted'] : [v.status, 'b-warn'];
     const d = v.role === 'master' ? 'Master (D:-Quelle)' : v.current === true ? 'D: aktuell' : v.current === false ? '<span class="b-warn">D: veraltet</span>' : '';

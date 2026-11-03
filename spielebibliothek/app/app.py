@@ -372,17 +372,42 @@ def run_now():
     return jsonify({"ok": True, "message": out or "Master wird gestartet."})
 
 
+HOST_CACHE = {"time": 0.0, "status": None, "error": None, "ok_time": 0.0}
+host_lock = threading.Lock()
+
+
+def host_status(max_age=10):
+    """Status vom Host holen - nie mehrere SSH-Abfragen gleichzeitig, kurze Zeit zwischenspeichern.
+    Schlaegt eine Abfrage fehl, wird ein zweites Mal versucht; danach bleibt der letzte gute Stand sichtbar."""
+    with host_lock:
+        if time.time() - HOST_CACHE["time"] < max_age:
+            return HOST_CACHE
+        err = None
+        for attempt in range(2):
+            out, err = ssh("--status", timeout=30)
+            if not err:
+                try:
+                    HOST_CACHE.update(status=json.loads(out), error=None, ok_time=time.time())
+                    break
+                except ValueError:
+                    err = out[:300]
+            if attempt == 0:
+                time.sleep(2)
+        if err:
+            HOST_CACHE["error"] = err
+        HOST_CACHE["time"] = time.time()
+        return HOST_CACHE
+
+
 @app.get("/api/host")
 def host():
     if not options()["proxmox_host"]:
         return jsonify({"ok": False, "error": "nicht konfiguriert"})
-    out, err = ssh("--status")
-    if err:
-        return jsonify({"ok": False, "error": err})
-    try:
-        st = json.loads(out)
-    except ValueError:
-        return jsonify({"ok": False, "error": out[:300]})
+    c = host_status()
+    st = c["status"]
+    if st is None:
+        return jsonify({"ok": False, "error": c["error"] or "keine Antwort"})
+    stale = bool(c["error"])
     o = options()
     host_vms = {int(v["vmid"]): v for v in st.get("vms") or []}
     rows = [{"vmid": int(o["master_vmid"]), "name": "Master", "role": "master",
@@ -393,7 +418,8 @@ def host():
         rows.append({"vmid": vid, "name": name or (h or {}).get("name") or str(vid), "role": "kind",
                      "status": h.get("status") if h else "unbekannt", "snapshot": h.get("snapshot") if h else None,
                      "current": h.get("current") if h else None, "known": bool(h)})
-    return jsonify({"ok": True, "busy": st.get("busy"), "latest_snapshot": st.get("latest_snapshot"),
+    return jsonify({"ok": True, "stale": stale, "error": c["error"] if stale else None,
+                    "age": int(time.time() - c["ok_time"]), "busy": st.get("busy"), "latest_snapshot": st.get("latest_snapshot"),
                     "master_changed_bytes": st.get("master_changed_bytes"), "last_run": st.get("last_run"),
                     "rows": rows})
 
@@ -414,6 +440,7 @@ def vm_action():
         return jsonify({"ok": False, "error": "VM nicht in der Konfiguration (master_vmid / vms)"}), 400
     arg = "--detach" if action == "sync" else f"--{action}"
     out, err = ssh(f"{arg} " + " ".join(map(str, ids)), timeout=30)
+    HOST_CACHE["time"] = 0.0
     if err:
         return jsonify({"ok": False, "error": err})
     return jsonify({"ok": True, "message": out})
