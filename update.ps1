@@ -1,4 +1,4 @@
-﻿<#
+<#
 update.ps1  -  Windows (Master und Kinder-VMs), PowerShell als Administrator
 
 Holt die neueste Version des Pakets von GitHub und aktualisiert die Skripte,
