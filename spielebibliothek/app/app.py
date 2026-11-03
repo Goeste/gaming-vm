@@ -17,11 +17,14 @@ import time
 from datetime import datetime, timezone
 
 import requests
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, redirect, request, send_from_directory
 
 DATA = os.environ.get("SB_DATA", "/data")
 OPTIONS_FILE = os.path.join(DATA, "options.json")
 CACHE_FILE = os.path.join(DATA, "owned.json")
+IMAGE_FILE = os.path.join(DATA, "images.json")        # Bildadressen aus dem Steam-Store (zwischengespeichert)
+STORE_API = os.environ.get("SB_STORE_API", "https://store.steampowered.com")
+ICONS = {}                                             # appid -> Icon-Kennung aus GetOwnedGames
 SSH_DIR = os.path.join(DATA, "ssh")
 SSH_KEY = os.path.join(SSH_DIR, "id_ed25519")          # selbst erzeugt, falls ssh_private_key leer
 SSH_KEY_CFG = os.path.join(SSH_DIR, "id_config")       # aus der Konfiguration (ssh_private_key)
@@ -141,7 +144,8 @@ def fetch_owned(account, key):
     if "games" not in resp:
         raise RuntimeError("keine Spiele sichtbar - Steam-Profil: Spieldetails auf 'Öffentlich' stellen")
     return [{"appid": int(g["appid"]), "name": g.get("name") or f"App {g['appid']}",
-             "playtime": int(g.get("playtime_forever", 0))} for g in resp["games"]]
+             "playtime": int(g.get("playtime_forever", 0)), "icon": g.get("img_icon_url") or ""}
+            for g in resp["games"]]
 
 
 def refresh_cache():
@@ -284,6 +288,8 @@ def state():
             e = games.setdefault(g["appid"], {"appid": g["appid"], "name": g["name"], "owners": [], "playtime": 0})
             e["owners"].append(acc_name)
             e["playtime"] += g.get("playtime", 0)
+            if g.get("icon"):
+                ICONS[g["appid"]] = g["icon"]
     installed = {}
     for g in (status or {}).get("installed") or []:
         try:
@@ -324,6 +330,44 @@ def state():
         "host_configured": bool(o["proxmox_host"]),
         "vms_configured": len(kid_vms(o)) > 0,
     })
+
+
+# ---------------------------------------------------------------- Spielbilder
+image_lock = threading.Lock()
+
+
+@app.get("/api/img/<int:appid>")
+def image(appid):
+    """Fuer Spiele, deren Bild nicht unter der alten Steam-Adresse liegt: richtige Adresse im Store
+    nachschlagen (neuere Spiele haben ein Kennwort im Pfad) und dorthin weiterleiten.
+    Ohne Store-Eintrag (z. B. aus dem Shop entfernt): das kleine Spiel-Icon aus der Bibliothek."""
+    with image_lock:
+        cache = read_json(IMAGE_FILE, {})
+        e = cache.get(str(appid))
+    if not e or (not e.get("url") and time.time() - e.get("t", 0) > 7 * 86400):
+        url = None
+        try:
+            r = requests.get(f"{STORE_API}/api/appdetails", params={"appids": appid, "filters": "basic"}, timeout=10)
+            if r.status_code == 200:
+                d = (r.json() or {}).get(str(appid)) or {}
+                if d.get("success"):
+                    url = (d.get("data") or {}).get("header_image")
+            else:
+                url = False                              # z. B. 429 - nichts merken, spaeter erneut
+        except (requests.RequestException, ValueError):
+            url = False
+        if url is not False:
+            e = {"url": url, "t": time.time()}
+            with image_lock:
+                cache = read_json(IMAGE_FILE, {})
+                cache[str(appid)] = e
+                write_json_atomic(IMAGE_FILE, cache)
+    if e and (e.get("url") or "").startswith("https://"):
+        return redirect(e["url"], code=302)
+    icon = ICONS.get(appid)
+    if icon and re.fullmatch(r"[0-9a-f]{40}", icon):
+        return redirect(f"https://media.steampowered.com/steamcommunity/public/images/apps/{appid}/{icon}.jpg", code=302)
+    abort(404)
 
 
 @app.post("/api/refresh")

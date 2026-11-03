@@ -164,7 +164,7 @@ function card(g) {
   const owners = g.owners.length ? g.owners.map(o => `<span class="chip">${esc(o)}</span>`).join('') : '<span class="chip">kein Konto</span>';
   const img = `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.appid}/header.jpg`;
   return `<div class="card">
-    <div class="cap" style="background-image:url('${img}')"><span hidden>${esc(g.name)}</span></div>
+    <div class="cap" data-id="${g.appid}" style="background-image:url('${img}')"><span hidden>${esc(g.name)}</span></div>
     <div class="body">
       <div class="name">${esc(g.name)}</div>
       <div class="owners">${owners}</div>
@@ -286,10 +286,13 @@ $('#btnNow').addEventListener('click', async e => {
   load(); loadHost();
 });
 
-// Fallback, wenn das Spielbild fehlt
+// Fallback, wenn das Spielbild fehlt: 1. alte Steam-Adresse, 2. Adresse aus dem Steam-Store (ueber die App), 3. Name
 new MutationObserver(() => document.querySelectorAll('.cap:not([data-c])').forEach(c => {
-  c.dataset.c = 1; const url = c.style.backgroundImage.slice(5, -2); const im = new Image();
-  im.onerror = () => { c.style.backgroundImage = 'none'; c.querySelector('span').hidden = false; }; im.src = url;
+  c.dataset.c = 1;
+  const show = url => { c.style.backgroundImage = `url('${url}')`; };
+  const none = () => { c.style.backgroundImage = 'none'; c.querySelector('span').hidden = false; };
+  const tryUrl = (url, onFail) => { const im = new Image(); im.onload = () => show(url); im.onerror = onFail; im.src = url; };
+  tryUrl(c.style.backgroundImage.slice(5, -2), () => tryUrl(`api/img/${c.dataset.id}`, none));
 })).observe($('#grid'), { childList: true });
 
 load(); loadHost();
