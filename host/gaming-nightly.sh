@@ -13,6 +13,8 @@
 #   gaming-nightly.sh --now [VMID..]  Wie der Nachtlauf, aber tagsüber per Knopf (Spielebibliothek):
 #                                     laufende Kinder-VMs werden NICHT heruntergefahren, sondern
 #                                     übersprungen und bekommen den Stand in der nächsten Nacht.
+#                                     Mit --shutdown-running werden sie stattdessen kurz vor dem
+#                                     Verteilen heruntergefahren und danach wieder gestartet.
 #   gaming-nightly.sh --status        Zeigt, welchen D:-Stand jede Kinder-VM hat.
 #
 # Kinder-VMs werden automatisch erkannt: jede VM, die als ${PLAYER_SLOT} die Platte
@@ -45,7 +47,7 @@ FORCE_STOP_MASTER=1                 # reagiert der Master auch auf den Notfall-S
 
 log() { echo "$(date '+%F %T') [gaming-nightly] $*"; }
 die() { log "FEHLER: $*"; exit 1; }
-usage() { sed -n '4,20p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '4,22p' "$0" | sed 's/^# \{0,1\}//'; }
 
 MODE=full
 NOW=0
@@ -60,6 +62,11 @@ case "${1:-}" in
 esac
 shift || true
 for a in "$@"; do
+  # Sofort-Lauf: laufende Kinder-VMs doch herunterfahren (kurz vor dem Verteilen) und danach wieder starten
+  if [[ "$a" == "--shutdown-running" ]]; then
+    (( NOW )) || die "--shutdown-running nur zusammen mit --now"
+    SHUTDOWN_RUNNING_PLAYERS=1; continue
+  fi
   [[ "$a" =~ ^[0-9]+$ ]] || die "Ungültige VMID: $a"
   [[ "$MODE" == "status" ]] && die "--status nimmt keine VMIDs"
   ONLY+=("$a")
@@ -158,7 +165,13 @@ exec 9>"$LOCKFILE"
 flock -n 9 || die "Skript läuft bereits."
 
 (( ${#PLAYERS[@]} > 0 )) || log "WARNUNG: keine Kinder-VMs gefunden – es wird nur der Snapshot erstellt."
-(( NOW )) && log "Sofort-Lauf (Spielebibliothek): laufende Kinder-VMs werden übersprungen"
+if (( NOW )); then
+  if (( SHUTDOWN_RUNNING_PLAYERS )); then
+    log "Sofort-Lauf (Spielebibliothek): laufende Kinder-VMs werden vor dem Verteilen kurz heruntergefahren und danach wieder gestartet"
+  else
+    log "Sofort-Lauf (Spielebibliothek): laufende Kinder-VMs werden übersprungen"
+  fi
+fi
 log "Modus: $MODE – Kinder-VMs: ${PLAYERS[*]:-keine}"
 
 # ---------------------------- 1) Master-Update -------------------------------

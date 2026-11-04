@@ -322,7 +322,9 @@ $('#btnHostUpd').addEventListener('click', async e => {
 $('#btnSync').addEventListener('click', () => {
   const ids = (H && H.rows || []).filter(r => r.role === 'kind' && r.known).map(r => r.vmid);
   if (!ids.length) return toast('Keine Kinder-VMs');
-  vmAction('sync', ids, 'Aktuellen Stand der Master-Platte jetzt an die ausgeschalteten Kinder-VMs verteilen?\nLaufende VMs werden übersprungen.');
+  vmAction('sync', ids, S && S.shutdown_running
+    ? 'Aktuellen Stand der Master-Platte jetzt an alle Kinder-VMs verteilen?\nLaufende VMs werden kurz heruntergefahren (laufende Spiele werden beendet) und danach wieder gestartet.'
+    : 'Aktuellen Stand der Master-Platte jetzt an die ausgeschalteten Kinder-VMs verteilen?\nLaufende VMs werden übersprungen.');
 });
 
 $('#grid').addEventListener('click', async e => {
@@ -352,7 +354,10 @@ $('#btnRefresh').addEventListener('click', async e => {
   load();
 });
 $('#btnNow').addEventListener('click', async e => {
-  if (!confirm('Master jetzt starten, vorgemerkte Spiele installieren/entfernen, alles aktualisieren und danach D: verteilen?\n\nLaufende Kinder-VMs werden nicht unterbrochen - sie bekommen den neuen Stand in der nächsten Nacht.')) return;
+  const kids = S.shutdown_running
+    ? 'Laufende Kinder-VMs werden nach dem Download kurz heruntergefahren (laufende Spiele werden beendet), bekommen den neuen Stand und starten danach wieder.'
+    : 'Laufende Kinder-VMs werden nicht unterbrochen - sie bekommen den neuen Stand in der nächsten Nacht.';
+  if (!confirm('Master jetzt starten, vorgemerkte Spiele installieren/entfernen, alles aktualisieren und danach D: verteilen?\n\n' + kids)) return;
   e.target.disabled = true;
   const j = await api('api/now', {}); e.target.disabled = false;
   toast(j.ok ? (j.message || 'Gestartet') : 'Fehler: ' + j.error, 7000);

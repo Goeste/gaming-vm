@@ -12,4 +12,5 @@ Gaming-Master vor und steuert Master und Kinder-VMs. Einrichtung: ANLEITUNG.md, 
 | `proxmox_user` | SSH-Benutzer auf dem Host (`root`) |
 | `ssh_private_key` | privater Schlüssel aus `gaming-ha-key` auf dem Host (leer = App erzeugt selbst einen, Zeile steht im Protokoll) |
 | `master_vmid` | VMID des Masters (2190) |
+| `shutdown_running_kids` | `true`: laufende Kinder-VMs beim Sofort-Lauf und bei „Nur verteilen“ kurz herunterfahren, aktualisieren und wieder starten. `false` (Standard): laufende VMs überspringen |
 | `vms` | Kinder-VMs (`vmid`, optional `name`), die angezeigt, gestartet, heruntergefahren und beim Verteilen berücksichtigt werden |

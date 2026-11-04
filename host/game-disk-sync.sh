@@ -19,7 +19,8 @@
 #     --self-update        neueste Skripte von GitHub holen und installieren (gaming-update, im Hintergrund)
 #     --full-now [VMID..]  Master JETZT starten (Spiele installieren/aktualisieren) und danach
 #                          verteilen: startet "gaming-nightly.sh --now" im Hintergrund
-#                          (Knopf der Spielebibliothek). Laufende Kinder-VMs werden übersprungen.
+#                          (Knopf der Spielebibliothek). Laufende Kinder-VMs werden übersprungen,
+#                          mit --shutdown-running vor dem Verteilen kurz heruntergefahren.
 #
 # Exit-Codes: 0 = alle aktuell, 2 = einige übersprungen (liefen), 1 = Fehler
 # Ergebnis des letzten Laufs: /var/lib/game-disk-sync/last.json
@@ -55,7 +56,7 @@ log() {
   echo "$line" >> "$LOGFILE" 2>/dev/null || true
 }
 die() { log "FEHLER: $*"; write_result "error" "$*"; exit 1; }
-usage() { sed -n '4,30p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '4,31p' "$0" | sed 's/^# \{0,1\}//'; }
 
 UPDATED=(); SKIPPED=(); CURRENT=(); SNAP=""
 json_list() { local IFS=,; echo "[${*:-}]"; }
@@ -117,7 +118,8 @@ if [[ "$MODE" == "full" ]]; then
   fi
   [[ "$(qm status "$MASTER_VMID" 2>/dev/null | awk '{print $2}')" == "stopped" ]] \
     || { echo "Master $MASTER_VMID läuft – bitte erst herunterfahren." >&2; exit 2; }
-  setsid nohup /usr/local/sbin/gaming-nightly.sh --now "${TARGETS[@]}" >> /var/log/gaming-nightly.log 2>&1 < /dev/null &
+  extra=(); (( SHUTDOWN_RUNNING )) && extra=(--shutdown-running)
+  setsid nohup /usr/local/sbin/gaming-nightly.sh --now "${extra[@]}" "${TARGETS[@]}" >> /var/log/gaming-nightly.log 2>&1 < /dev/null &
   echo "Master wird gestartet – Fortschritt: /var/log/gaming-nightly.log"
   exit 0
 fi

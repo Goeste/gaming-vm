@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.4.0
+- Neue Option **`shutdown_running_kids`**: Bei *Jetzt installieren und verteilen* und *Nur verteilen* werden laufende Kinder-VMs kurz heruntergefahren, bekommen den neuen Stand und starten danach wieder – statt bis zur nächsten Nacht zu warten.
+- Beim Sofort-Lauf passiert das erst **nach** dem Download auf dem Master; bis dahin kann weitergespielt werden.
+- Benötigt die neuen Host-Skripte (Knopf *Host-Skripte aktualisieren*).
+
 ## 1.3.1
 - Neue Aufteilung: **VMs** oben im festen Kopfbereich, darunter die **Meldungen**.
 - **Suche und Filter** stehen jetzt direkt über der Spieleliste.

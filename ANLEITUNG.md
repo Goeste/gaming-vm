@@ -699,6 +699,7 @@ Wichtig: `Bibliothek` liegt direkt in der Freigabe, die du im Master bei `setup-
    proxmox_user: root
    ssh_private_key: ""               # siehe 13.4
    master_vmid: 2190
+   shutdown_running_kids: false      # true = laufende Kinder-VMs beim Knopf kurz herunterfahren und neu starten
    vms:                              # Kinder-VMs, die die App anzeigt und steuert
      - vmid: 2193
        name: Felix

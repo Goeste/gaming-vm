@@ -58,6 +58,7 @@ def options():
     o.setdefault("ssh_private_key", "")
     o.setdefault("master_vmid", 2190)
     o.setdefault("vms", [])
+    o.setdefault("shutdown_running_kids", False)
     return o
 
 
@@ -329,6 +330,7 @@ def state():
         "folder_ok": folder_ok,
         "host_configured": bool(o["proxmox_host"]),
         "vms_configured": len(kid_vms(o)) > 0,
+        "shutdown_running": bool(o["shutdown_running_kids"]),
     })
 
 
@@ -410,7 +412,8 @@ def run_now():
     if not options()["proxmox_host"]:
         return jsonify({"ok": True, "message": "Vorgemerkt - wird im nächsten Nachtlauf erledigt (kein Proxmox-Host eingetragen)."})
     ids = " ".join(str(v) for v, _ in kid_vms())
-    out, err = ssh(f"--full-now {ids}".strip(), timeout=30)
+    flag = " --shutdown-running" if options()["shutdown_running_kids"] else ""
+    out, err = ssh(f"--full-now{flag} {ids}".strip(), timeout=30)
     if err:
         return jsonify({"ok": False, "error": err})
     return jsonify({"ok": True, "message": out or "Master wird gestartet."})
@@ -495,6 +498,8 @@ def vm_action():
     if action not in ("start", "shutdown", "sync") or not ids or any(i not in allowed for i in ids):
         return jsonify({"ok": False, "error": "VM nicht in der Konfiguration (master_vmid / vms)"}), 400
     arg = "--detach" if action == "sync" else f"--{action}"
+    if action == "sync" and o["shutdown_running_kids"]:
+        arg += " --shutdown-running"
     out, err = ssh(f"{arg} " + " ".join(map(str, ids)), timeout=30)
     HOST_CACHE["time"] = 0.0
     if err:
